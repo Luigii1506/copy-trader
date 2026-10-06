@@ -56,7 +56,9 @@ $(calendar "$@")
 </dict>
 </plist>
 EOF
+  # bootout is asynchronous: wait until a running job has actually exited before re-registering it.
   launchctl bootout "gui/$UID_NUM/$label" 2>/dev/null || true
+  for _ in $(seq 30); do launchctl print "gui/$UID_NUM/$label" >/dev/null 2>&1 || break; sleep 1; done
   launchctl bootstrap "gui/$UID_NUM" "$plist"
   echo "installed $label ($*)"
 }

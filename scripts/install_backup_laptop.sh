@@ -29,6 +29,8 @@ cat > "$PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+# bootout is asynchronous: wait until a running job has actually exited before re-registering it.
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+for _ in $(seq 30); do launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break; sleep 1; done
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 echo "installed $LABEL -> $BIN (log: $LOG)"
