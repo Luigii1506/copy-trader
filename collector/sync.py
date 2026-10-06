@@ -4,6 +4,7 @@
     python -m collector.sync wallets       # state, portfolio and new fills for every tracked wallet
     python -m collector.sync all           # both, in that order
     python -m collector.sync normalize     # raw JSON -> Parquet tables (see collector/normalize.py)
+    python -m collector.sync health        # are the jobs running on schedule? exit code 1 if not
 
 Installed as the `copy-trader` command (`uv tool install .`), which is what launchd runs.
 """
@@ -15,9 +16,10 @@ import fcntl
 import logging
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Iterator
 
-from . import normalize, universe
+from . import health, normalize, universe
 from .hyperliquid import HyperliquidClient
 from .storage import DATA_DIR, RawWriter, envelope, read_json, utcnow, write_json
 
@@ -26,12 +28,28 @@ log = logging.getLogger("collector")
 FILLS_CURSOR_PATH = DATA_DIR / "state" / "hyperliquid_fills_cursor.json"
 
 
+def last_run_path(job: str) -> Path:
+    return DATA_DIR / "state" / f"last_run_{job}.json"
+
+
+def fill_gap_suspected(start_ms: int, fills: list[dict]) -> bool:
+    """True when fills between runs may have been lost.
+
+    An incremental fetch starts at the timestamp of the last fill already stored, so that fill is
+    returned again. If the oldest returned fill is newer than the cursor, the fills in between fell
+    out of the API's "10,000 most recent" window before we fetched them.
+    """
+    return start_ms > 0 and bool(fills) and min(f["time"] for f in fills) > start_ms
+
+
 def sync_leaderboard(client: HyperliquidClient) -> None:
     started = utcnow()
     board = client.leaderboard()
     RawWriter("leaderboard", started).write(envelope("leaderboard", {"url": "leaderboard"}, board, started))
     _, added = universe.refresh(board, started)
-    log.info("leaderboard: %d rows saved, %d wallets added to universe", len(board["leaderboardRows"]), added)
+    rows = len(board["leaderboardRows"])
+    write_json(last_run_path("leaderboard"), {"finished_at": utcnow().isoformat(), "rows": rows, "added": added})
+    log.info("leaderboard: %d rows saved, %d wallets added to universe", rows, added)
 
 
 def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
@@ -44,6 +62,7 @@ def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
     cursors: dict[str, int] = read_json(FILLS_CURSOR_PATH, {})
     writers = {name: RawWriter(name, started) for name in ("clearinghouse_state", "portfolio", "fills")}
     failures = 0
+    gaps: list[str] = []
     t0 = time.monotonic()
 
     for i, user in enumerate(wallets, 1):
@@ -61,7 +80,12 @@ def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
             start_ms = cursors.get(user, 0)
             fills = client.fills_since(user, start_ms)
             request = {"type": "userFillsByTime", "user": user, "startTime": start_ms}
-            writers["fills"].write(envelope("fills", request, fills, fetched))
+            record = envelope("fills", request, fills, fetched)
+            if fill_gap_suspected(start_ms, fills):
+                gaps.append(user)
+                record["gap_suspected"] = True
+                log.warning("wallet %s: possible fill gap after %d (too many fills between runs)", user, start_ms)
+            writers["fills"].write(record)
             if fills:
                 # Next run starts at the last seen timestamp; duplicates are removed during normalization.
                 cursors[user] = max(f["time"] for f in fills)
@@ -72,6 +96,14 @@ def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
 
         if i % 25 == 0 or i == len(wallets):
             log.info("wallets: %d/%d done, %d failed, %.0fs elapsed", i, len(wallets), failures, time.monotonic() - t0)
+
+    write_json(last_run_path("wallets"), {
+        "started_at": started.isoformat(),
+        "finished_at": utcnow().isoformat(),
+        "wallets": len(wallets),
+        "failures": failures,
+        "gap_suspected": gaps,
+    })
 
 
 @contextmanager
@@ -90,9 +122,12 @@ def job_lock(name: str) -> Iterator[bool]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hyperliquid raw data collector")
-    parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize"])
+    parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize", "health"])
     parser.add_argument("--limit", type=int, help="only sync the first N tracked wallets (for testing)")
     args = parser.parse_args()
+
+    if args.job == "health":
+        raise SystemExit(health.main())
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)

@@ -10,6 +10,7 @@ copy-trader = "collector.sync:main"
 
 [dependency-groups]
 research = ["duckdb>=1.1", "jupyterlab>=4.2"]
+dev = ["pytest>=8"]
 
 [build-system]
 requires = ["hatchling"]
@@ -17,3 +18,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["collector"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -11,9 +11,12 @@ uv run python -m collector.sync leaderboard   # snapshot del leaderboard + refre
 uv run python -m collector.sync wallets       # estado, portfolio y fills nuevos de cada wallet rastreada
 uv run python -m collector.sync all           # ambos
 uv run python -m collector.sync normalize     # crudo -> Parquet
+uv run python -m collector.sync health        # ¿los jobs corren a tiempo? exit 1 si no
 ```
 
 ## Ejecución automática (launchd)
+
+Corre en la Mac Studio (`admin@admins-mac-studio` por Tailscale), repo en `~/copy-trader`. Desplegar cambios: `git pull && ./scripts/install_launchd.sh`.
 
 ```bash
 ./scripts/install_launchd.sh    # instala `copy-trader` con uv tool y registra los jobs; re-ejecutar tras cambiar código
@@ -30,7 +33,20 @@ uv run python -m collector.sync normalize     # crudo -> Parquet
 - Logs: `~/data/copy-trader/logs/<job>.log` · Correr ya: `launchctl kickstart gui/$(id -u)/com.luisencinas.copytrader.<job>`
 - Código y datos de launchd viven fuera de `~/Documents` (macOS bloquea esa carpeta a launchd sin Full Disk Access).
 
-Para análisis: `uv sync --group research` (DuckDB, Polars, Jupyter).
+### Backup y alertas (laptop)
+
+```bash
+./scripts/install_backup_laptop.sh   # cada 3h (si la laptop está despierta): copia raw/universe/state de la Studio
+```
+
+Copia a `~/data/copy-trader-backup` y ejecuta `copy-trader health` en la Studio. Si algo falla (job atrasado, >10% de wallets con error, poco disco o la Studio no responde) aparece una notificación de macOS. Log: `~/data/copy-trader-backup.log`.
+
+## Desarrollo
+
+```bash
+uv sync --all-groups     # incluye research (DuckDB, Jupyter) y dev (pytest)
+uv run pytest
+```
 
 ## Datos
 

@@ -26,7 +26,7 @@ from typing import Any
 
 import polars as pl
 
-from .storage import DATA_DIR, PLATFORM
+from .storage import DATA_DIR, PLATFORM, utcnow, write_json
 
 log = logging.getLogger(__name__)
 
@@ -182,4 +182,5 @@ def run() -> None:
             n = _process(raw, dataset)
             done += 1
             log.info("normalized %s/%s (%d rows)", dataset, raw.name, n)
+    write_json(DATA_DIR / "state" / "last_run_normalize.json", {"finished_at": utcnow().isoformat(), "processed": done})
     log.info("normalize: %d raw files processed, %d still being written", done, skipped)
