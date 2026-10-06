@@ -1,0 +1,125 @@
+"""Hyperliquid client: public info endpoint + leaderboard, with weight-based rate limiting.
+
+Sources:
+- Info endpoint: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint
+- Rate limits:   https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits
+- Leaderboard:   stats-data.hyperliquid.xyz (used by the official frontend; NOT in the API docs)
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+import time
+from typing import Any
+
+import httpx
+
+log = logging.getLogger(__name__)
+
+INFO_URL = "https://api.hyperliquid.xyz/info"
+LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
+
+# Documented: 1200 weight/min per IP. Stay below it to leave headroom.
+WEIGHT_PER_MINUTE = 1000
+
+# Documented weights. Everything not listed weighs 20.
+LIGHT_TYPES = {"l2Book", "allMids", "clearinghouseState", "orderStatus", "spotClearinghouseState", "exchangeStatus"}
+# These add 1 weight per 20 items returned.
+PER_ITEM_TYPES = {"userFills", "userFillsByTime", "historicalOrders", "userFunding", "fundingHistory"}
+
+FILLS_PAGE_SIZE = 2000  # documented max per userFillsByTime response
+
+
+def base_weight(request_type: str) -> int:
+    if request_type in LIGHT_TYPES:
+        return 2
+    if request_type == "userRole":
+        return 60
+    return 20
+
+
+class WeightLimiter:
+    """Token bucket measured in API weight. Balance may go negative after a heavy response."""
+
+    def __init__(self, per_minute: int = WEIGHT_PER_MINUTE):
+        self.capacity = per_minute
+        self.rate = per_minute / 60.0
+        self.tokens = float(per_minute)
+        self.updated = time.monotonic()
+        self.lock = threading.Lock()
+
+    def _refill(self) -> None:
+        now = time.monotonic()
+        self.tokens = min(self.capacity, self.tokens + (now - self.updated) * self.rate)
+        self.updated = now
+
+    def acquire(self, weight: int) -> None:
+        with self.lock:
+            self._refill()
+            if self.tokens < weight:
+                time.sleep((weight - self.tokens) / self.rate)
+                self._refill()
+            self.tokens -= weight
+
+    def charge(self, weight: int) -> None:
+        """Charge extra weight known only after the response (per-item weights)."""
+        with self.lock:
+            self._refill()
+            self.tokens -= weight
+
+
+class HyperliquidClient:
+    def __init__(self, limiter: WeightLimiter | None = None, timeout: float = 60.0):
+        self.limiter = limiter or WeightLimiter()
+        self.http = httpx.Client(timeout=timeout, headers={"Content-Type": "application/json"})
+
+    def close(self) -> None:
+        self.http.close()
+
+    def info(self, body: dict[str, Any], retries: int = 5) -> Any:
+        request_type = body["type"]
+        self.limiter.acquire(base_weight(request_type))
+        for attempt in range(retries):
+            try:
+                resp = self.http.post(INFO_URL, json=body)
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    raise httpx.HTTPStatusError(f"HTTP {resp.status_code}", request=resp.request, response=resp)
+                resp.raise_for_status()
+                data = resp.json()
+                if request_type in PER_ITEM_TYPES and isinstance(data, list):
+                    self.limiter.charge(len(data) // 20)
+                return data
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                if attempt == retries - 1:
+                    raise
+                wait = 2 ** attempt * 5
+                log.warning("%s failed (%s); retrying in %ss", request_type, exc, wait)
+                time.sleep(wait)
+
+    def leaderboard(self) -> dict[str, Any]:
+        resp = self.http.get(LEADERBOARD_URL, timeout=180.0)
+        resp.raise_for_status()
+        return resp.json()
+
+    def clearinghouse_state(self, user: str) -> dict[str, Any]:
+        return self.info({"type": "clearinghouseState", "user": user})
+
+    def portfolio(self, user: str) -> list[Any]:
+        return self.info({"type": "portfolio", "user": user})
+
+    def fills_since(self, user: str, start_ms: int) -> list[dict[str, Any]]:
+        """All fills with time >= start_ms, paginated. Only the 10,000 most recent fills are available."""
+        fills: list[dict[str, Any]] = []
+        seen: set[tuple[Any, Any]] = set()
+        cursor = start_ms
+        while True:
+            page = self.info({"type": "userFillsByTime", "user": user, "startTime": cursor})
+            new = [f for f in page if (f["tid"], f["oid"]) not in seen]
+            seen.update((f["tid"], f["oid"]) for f in new)
+            fills.extend(new)
+            if len(page) < FILLS_PAGE_SIZE or not new:
+                return fills
+            last_time = page[-1]["time"]
+            # Docs: use the last returned timestamp as the next startTime (dedup handles overlap).
+            cursor = last_time if last_time > cursor else cursor + 1
