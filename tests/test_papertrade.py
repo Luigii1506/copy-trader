@@ -270,3 +270,29 @@ def test_dashboard_builds_from_store(setup, monkeypatch, tmp_path):
     assert 'class="bad">FAIL' in page and "wallets: stale" in page
     assert "congelados" in page and "censo: 10/40" in page
     assert "Ranking TraderScore" in page and "88.5" in page and "limpio" in page
+
+
+def test_tracking_report_measures_the_copying_gap(setup):
+    from papertrade import tracking
+    engine, ex, store = setup
+    engine.step(T0)
+    [(book_id, _)] = [(i, b) for i, b in store.open_books("test") if b.trader == "0xa"]
+    # Trader makes +1%/h on $1k equity; the book replicates it minus 0.1%/h of friction.
+    for h in range(6):
+        store.snapshot_book(T0 + timedelta(hours=h), book_id,
+                            equity=3_000.0 * (1.009 ** h), gross=6_000.0,
+                            trader_equity=1_000.0, trader_pnl=10.0 * h)
+    store.commit()
+    [row] = [r for r in tracking.report(store) if r["trader"] == "0xa"]
+    assert row["hours"] == 5
+    assert row["trader_ret"] == pytest.approx(1.01 ** 5 - 1)          # 5 compounded 1% steps
+    assert row["book_ret"] == pytest.approx(1.009 ** 5 - 1)
+    assert row["gap"] < 0 and row["gap_per_day"] == pytest.approx(-0.001 * 24, rel=0.2)
+
+
+def test_tracking_skips_rows_without_trader_pnl(setup):
+    from papertrade import tracking
+    engine, ex, store = setup
+    engine.step(T0)                                                   # engine snapshots carry pnl=None? (fake)
+    store.commit()
+    assert all(r["hours"] >= 3 for r in tracking.report(store))
