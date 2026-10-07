@@ -32,6 +32,9 @@ Selector = Callable[[pl.DataFrame, datetime, int], list[str]]
 MIN_ACCOUNT = 10_000.0
 # 2 × (taker fee 0.045% + ~0.02% impact) for a full turnover of the book
 REBALANCE_COST = 0.0013
+# A trader with a single +/-100% step in the lookback runs leverage a 5x-capped copier cannot
+# mirror; their past return is not what we would have earned.
+MAX_STEP_ABS_RET = 1.0
 
 
 # --- selection rules --------------------------------------------------------------------------
@@ -60,12 +63,13 @@ def everyone() -> Selector:
 # --- backtest ---------------------------------------------------------------------------------
 
 def _eligible_signals(returns: pl.DataFrame, at: datetime, lookback_weeks: int, min_obs: int,
-                      min_account: float, seed: int) -> pl.DataFrame:
+                      min_account: float, max_step_abs_ret: float, seed: int) -> pl.DataFrame:
     signals = formation_signals(returns, at, lookback_weeks, min_obs, seed=seed)
     # Size at formation: last known account value on or before `at`.
     size = (returns.filter(pl.col("end") <= at).sort("end").group_by("user")
             .agg(account_value=pl.col("account_value").last()))
-    return signals.join(size, on="user").filter(pl.col("account_value") >= min_account)
+    return (signals.join(size, on="user")
+            .filter((pl.col("account_value") >= min_account) & (pl.col("max_abs_ret") <= max_step_abs_ret)))
 
 
 def copy_backtest(
@@ -75,6 +79,7 @@ def copy_backtest(
     hold_weeks: int = 4,
     min_obs_frac: float = 0.75,
     min_account: float = MIN_ACCOUNT,
+    max_step_abs_ret: float = MAX_STEP_ABS_RET,
     rebalance_cost: float = REBALANCE_COST,
     friction_per_step: float = 0.0,
     exclude: pl.Series | None = None,
@@ -92,7 +97,8 @@ def copy_backtest(
     first, last = ends.min() + lookback_weeks * WEEK, ends.max() - hold_weeks * WEEK
     rows, equity, at, i = [], 1.0, first, 0
     while at <= last:
-        signals = _eligible_signals(returns, at, lookback_weeks, min_lookback, min_account, seed * 100_003 + i)
+        signals = _eligible_signals(returns, at, lookback_weeks, min_lookback, min_account, max_step_abs_ret,
+                                    seed * 100_003 + i)
         chosen = selector(signals, at, seed * 100_003 + i) if signals.height else []
         end = at + hold_weeks * WEEK
         if chosen:

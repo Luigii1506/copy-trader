@@ -32,73 +32,85 @@ QUINTILE = 0.2
 
 def period_returns(
     equity: pl.DataFrame,
-    period: str = "allTime",
+    pnl_period: str = "perpAllTime",
+    capital_period: str = "allTime",
     step_weeks: int = 2,
     min_account: float = 1_000.0,
 ) -> pl.DataFrame:
-    """Trading returns per wallet on a common grid of `step_weeks`-long steps, Sunday 00:00 UTC.
+    """Perp-trading returns per wallet on a common grid of `step_weeks`-long steps, Sunday 00:00 UTC.
 
-    Return = change in cumulative PnL / Modified Dietz capital (start value + half of the step's net
-    deposits). PnL in the numerator keeps deposits out of gains; the Dietz denominator keeps them
-    from inflating the ratio when they land mid-step. Steps that start with less
-    than `min_account` get a null return (tiny denominators produce meaningless percentages).
+    Return = change in cumulative **perp** PnL / **total** capital at the start of the step plus
+    any net deposit during it. This is what a copier of the trader's perp positions, sized
+    against the trader's total equity, would earn:
+    - perp PnL only (`perpAllTime`): spot holdings and airdrops (HYPE, Dec 2024: +1000% on spot
+      balances) are not trading skill and cannot be copied;
+    - total capital (`allTime`): many traders keep collateral in spot or unified accounts, so
+      the perp sub-account alone understates their capital and overstates leverage;
+    - deposits in the denominator: with a point every ~2 weeks their timing is unknown, and
+      dividing by the starting value alone would turn "$200k deposited onto $1.5k, then $20k
+      earned" into +1,333%. Withdrawals are assumed to happen after the gains they take out,
+      so "+$3.1M on $1.7M, then $3.2M withdrawn" stays +182% instead of 27x.
+    Steps that start under `min_account`, or where withdrawals leave no meaningful capital, get
+    a null return. Returns are floored at -100%.
 
     Defaults come from the data: portfolio() returns ~70-110 points per wallet regardless of age,
-    so long histories are sampled every ~14 days - a weekly grid would leave half the steps empty
-    and silently drop exactly the longest-lived wallets. `allTime` (total capital) rather than
-    `perpAllTime` because many traders keep collateral outside the perp account, which reads as a
-    ~0 perp balance; total capital is also what a copier actually allocates.
+    so long histories are sampled every ~14 days; a weekly grid would leave half the steps empty
+    and silently drop exactly the longest-lived wallets.
 
     equity: deduplicated rows of user, period, time_ms, account_value, pnl.
     Returns: user, end (UTC datetime, end of step), account_value, pnl, dpnl, ret.
     """
     step = timedelta(weeks=step_weeks)
     tolerance = step + timedelta(days=7)
-    series = (
-        equity.filter(pl.col("period") == period)
-        .with_columns(ts=pl.from_epoch("time_ms", time_unit="ms").dt.cast_time_unit("ms").dt.replace_time_zone("UTC"))
-        .select("user", "ts", "account_value", "pnl")
-        .sort("user", "ts")
-    )
-    if series.is_empty():
-        return pl.DataFrame(schema={"user": pl.String, "end": pl.Datetime("ms", "UTC"), "account_value": pl.Float64,
-                                    "pnl": pl.Float64, "dpnl": pl.Float64, "ret": pl.Float64})
+    empty = pl.DataFrame(schema={"user": pl.String, "end": pl.Datetime("ms", "UTC"), "account_value": pl.Float64,
+                                 "pnl": pl.Float64, "dpnl": pl.Float64, "ret": pl.Float64})
+
+    def series(period: str, value: str, name: str) -> pl.DataFrame:
+        # Hyperliquid prepends a synthetic (0, 0) origin point to each history; it is not an observation.
+        return (equity.filter((pl.col("period") == period) & ~((pl.col("account_value") == 0) & (pl.col("pnl") == 0)))
+                .with_columns(ts=pl.from_epoch("time_ms", time_unit="ms").dt.cast_time_unit("ms").dt.replace_time_zone("UTC"))
+                .select("user", "ts", pl.col(value).alias(name)).sort("user", "ts"))
+
+    capital = series(capital_period, "account_value", "account_value")
+    total_pnl = series(capital_period, "pnl", "pnl_total")
+    perp_pnl = series(pnl_period, "pnl", "pnl")
+    if capital.is_empty() or perp_pnl.is_empty():
+        return empty
 
     # Grid points are only valid inside a wallet's observed range: past its last observation we
-    # don't know the value, so that partial week is dropped rather than filled.
-    first = series["ts"].min().date()
+    # don't know the value, so that partial step is dropped rather than filled.
+    first = capital["ts"].min().date()
     first_sunday = first + timedelta(days=(6 - first.weekday()) % 7)
-    weeks = pl.datetime_range(
+    ends = pl.datetime_range(
         datetime.combine(first_sunday, datetime.min.time(), tzinfo=timezone.utc),
-        series["ts"].max() + timedelta(days=1),
+        capital["ts"].max() + timedelta(days=1),
         interval=f"{step_weeks}w", time_unit="ms", time_zone="UTC", eager=True,
     ).alias("end")
+    bounds = capital.group_by("user").agg(lo=pl.col("ts").min(), hi=pl.col("ts").max())
+    grid = (bounds.join(ends.to_frame(), how="cross")
+            .filter(pl.col("end").is_between(pl.col("lo"), pl.col("hi") + timedelta(days=1)))
+            .select("user", "end").sort("user", "end"))
 
-    bounds = series.group_by("user").agg(lo=pl.col("ts").min(), hi=pl.col("ts").max())
-    grid = (
-        bounds.join(weeks.to_frame(), how="cross")
-        .filter(pl.col("end").is_between(pl.col("lo"), pl.col("hi") + timedelta(days=1)))
-        .select("user", "end")
-        .sort("user", "end")
-    )
     # Backward as-of: each grid boundary takes the last observation at or before it (never after).
-    snapped = grid.join_asof(series, left_on="end", right_on="ts", by="user", strategy="backward",
-                             tolerance=tolerance, check_sortedness=False)
+    def snap(frame: pl.DataFrame, src: pl.DataFrame, ts_name: str) -> pl.DataFrame:
+        return frame.join_asof(src.rename({"ts": ts_name}), left_on="end", right_on=ts_name, by="user",
+                               strategy="backward", tolerance=tolerance, check_sortedness=False)
+
+    snapped = snap(snap(snap(grid, capital, "ts"), total_pnl, "ts_total"), perp_pnl, "ts_perp")
     prev = lambda c: pl.col(c).shift(1).over("user")
     return (
-        snapped.with_columns(dpnl=pl.col("pnl") - prev("pnl"))
-        # Modified Dietz: net deposits/withdrawals during the step (value change not explained by PnL)
-        # are assumed to arrive mid-step and count half. We only see a point every ~2 weeks, so
-        # their timing is unknown; dividing by the starting value alone would turn "$200k deposited
-        # onto a $1.5k account, then $20k earned" into a +1,333% return.
-        .with_columns(flow=pl.col("account_value") - prev("account_value") - pl.col("dpnl"))
-        .with_columns(capital=prev("account_value") + 0.5 * pl.col("flow"))
+        snapped.with_columns(dpnl=pl.col("pnl") - prev("pnl"),
+                             flow=pl.col("account_value") - prev("account_value") - (pl.col("pnl_total") - prev("pnl_total")))
+        # Conservative timing of unknown flows: deposits count from the start of the step (they are
+        # made before trading them), withdrawals at the end (profits are withdrawn after they are
+        # made) and so never shrink the denominator. Both assumptions bias returns *down*.
+        .with_columns(capital=prev("account_value") + pl.max_horizontal(pl.col("flow"), pl.lit(0.0)))
         .with_columns(
             # Null when the start is too small, when withdrawals leave no meaningful capital, or when
-            # both boundaries snapped to the same observation (a gap would read as a flat 0% step).
+            # a boundary snapped to the same observation as the previous one (a gap would read as 0%).
             ret=pl.when((prev("account_value") >= min_account) & (pl.col("capital") >= 0.5 * min_account)
-                        & (pl.col("ts") != prev("ts")))
-            .then(pl.col("dpnl") / pl.col("capital"))
+                        & (pl.col("ts") != prev("ts")) & (pl.col("ts_perp") != prev("ts_perp")))
+            .then(pl.max_horizontal(pl.col("dpnl") / pl.col("capital"), pl.lit(-1.0)))
         )
         .select("user", "end", "account_value", "pnl", "dpnl", "ret")
     )
@@ -125,6 +137,7 @@ def formation_signals(returns: pl.DataFrame, at: datetime, lookback_weeks: int,
     ).with_columns(dd=pl.col("curve") / pl.col("curve").cum_max().over("user") - 1)
     signals = drawdowns.group_by("user").agg(
         n_obs=pl.len(),
+        max_abs_ret=pl.col("ret").abs().max(),  # one step of +/-100% means ruin-level leverage
         ret=(1 + pl.col("ret")).product() - 1,
         sharpe=pl.col("ret").mean() / pl.col("ret").std(),
         low_dd=pl.col("dd").min(),  # max drawdown as a negative number: higher = shallower

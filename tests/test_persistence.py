@@ -25,8 +25,9 @@ def equity_from_returns(weekly: dict[str, list[float]], start_value=10_000.0) ->
                 pnl += gain
                 value += gain
             ts = START + timedelta(weeks=i, hours=-1)  # observed just before each week boundary
-            rows.append({"user": user, "period": "allTime", "time_ms": int(ts.timestamp() * 1000),
-                         "account_value": value, "pnl": pnl})
+            for period in ("allTime", "perpAllTime"):   # all PnL is perp PnL in these worlds
+                rows.append({"user": user, "period": period, "time_ms": int(ts.timestamp() * 1000),
+                             "account_value": value, "pnl": pnl})
     return pl.DataFrame(rows)
 
 
@@ -47,14 +48,64 @@ def test_returns_without_flows_are_simple_returns():
 def test_mid_step_deposit_does_not_inflate_returns():
     ms = lambda w: int((START + timedelta(weeks=w, hours=-1)).timestamp() * 1000)
     eq = pl.DataFrame([
-        {"user": "0xa", "period": "allTime", "time_ms": ms(0), "account_value": 1_500.0, "pnl": 0.0},
+        {"user": "0xa", "period": p, "time_ms": ms(0), "account_value": 1_500.0, "pnl": 0.0} for p in ("allTime", "perpAllTime")
+    ] + [
         # $200k deposited during the week, then $20k earned trading it
-        {"user": "0xa", "period": "allTime", "time_ms": ms(1), "account_value": 221_500.0, "pnl": 20_000.0},
+        {"user": "0xa", "period": p, "time_ms": ms(1), "account_value": 221_500.0, "pnl": 20_000.0} for p in ("allTime", "perpAllTime")
     ])
     [ret] = period_returns(eq, step_weeks=1).drop_nulls("ret")["ret"].to_list()
-    # Modified Dietz: 20k / (1.5k + 200k / 2) = 19.7%. True value is 10%-1,333% depending on
-    # when the deposit landed; the mid-step assumption keeps it bounded instead of exploding.
-    assert abs(ret - 20_000 / (1_500 + 100_000)) < 1e-9
+    # Deposit counted from the start: 20k / (1.5k + 200k) = 9.9%, the conservative bound.
+    assert abs(ret - 20_000 / 201_500) < 1e-9
+
+
+def test_withdrawn_profits_do_not_shrink_the_capital_base():
+    ms = lambda w: int((START + timedelta(weeks=w, hours=-1)).timestamp() * 1000)
+    rows = [{"user": "0xa", "period": p, "time_ms": ms(0), "account_value": 1.7e6, "pnl": 0.0} for p in ("allTime", "perpAllTime")]
+    # +$3.1M earned, $3.2M withdrawn: account ends slightly lower
+    rows += [{"user": "0xa", "period": p, "time_ms": ms(1), "account_value": 1.6e6, "pnl": 3.1e6} for p in ("allTime", "perpAllTime")]
+    [ret] = period_returns(pl.DataFrame(rows), step_weeks=1).drop_nulls("ret")["ret"].to_list()
+    assert abs(ret - 3.1e6 / 1.7e6) < 1e-9
+
+
+def test_synthetic_origin_point_is_ignored():
+    ms = lambda h: int((START + timedelta(hours=h)).timestamp() * 1000)
+    rows = [{"user": "0xa", "period": "allTime", "time_ms": ms(-2), "account_value": 0.0, "pnl": 0.0},
+            {"user": "0xa", "period": "allTime", "time_ms": ms(-1), "account_value": 10_000.0, "pnl": 500_000.0},
+            {"user": "0xa", "period": "perpAllTime", "time_ms": ms(-2), "account_value": 0.0, "pnl": 0.0},
+            {"user": "0xa", "period": "perpAllTime", "time_ms": ms(-1), "account_value": 10_000.0, "pnl": 500_000.0}]
+    rows += [{"user": "0xa", "period": p, "time_ms": ms(24 * 7 - 1), "account_value": 10_100.0, "pnl": 500_100.0}
+             for p in ("allTime", "perpAllTime")]
+    [ret] = period_returns(pl.DataFrame(rows), step_weeks=1).drop_nulls("ret")["ret"].to_list()
+    assert abs(ret - 100 / 10_000) < 1e-9       # not 500k / 10k
+
+
+def test_spot_gains_are_not_trading_returns():
+    ms = lambda w: int((START + timedelta(weeks=w, hours=-1)).timestamp() * 1000)
+    rows = []
+    for w, (av, total, perp) in enumerate([(10_000.0, 0.0, 0.0), (60_000.0, 50_000.0, 5_000.0)]):
+        rows.append({"user": "0xa", "period": "allTime", "time_ms": ms(w), "account_value": av, "pnl": total})
+        rows.append({"user": "0xa", "period": "perpAllTime", "time_ms": ms(w), "account_value": av, "pnl": perp})
+    [ret] = period_returns(pl.DataFrame(rows), step_weeks=1).drop_nulls("ret")["ret"].to_list()
+    assert abs(ret - 5_000 / 10_000) < 1e-9     # $45k of spot/airdrop gains are not perp skill
+
+
+def test_losses_beyond_the_starting_capital_imply_a_deposit():
+    ms = lambda w: int((START + timedelta(weeks=w, hours=-1)).timestamp() * 1000)
+    rows = [{"user": "0xa", "period": p, "time_ms": ms(0), "account_value": 10_000.0, "pnl": 0.0} for p in ("allTime", "perpAllTime")]
+    # Lost $30k on a $10k account: $21k must have been deposited, so the base is $31k
+    rows += [{"user": "0xa", "period": p, "time_ms": ms(1), "account_value": 1_000.0, "pnl": -30_000.0} for p in ("allTime", "perpAllTime")]
+    [ret] = period_returns(pl.DataFrame(rows), step_weeks=1).drop_nulls("ret")["ret"].to_list()
+    assert abs(ret - (-30_000 / 31_000)) < 1e-9
+
+
+def test_returns_are_floored_at_minus_100_percent():
+    ms = lambda w: int((START + timedelta(weeks=w, hours=-1)).timestamp() * 1000)
+    rows = [{"user": "0xa", "period": p, "time_ms": ms(0), "account_value": 10_000.0, "pnl": 0.0} for p in ("allTime", "perpAllTime")]
+    # Perp PnL -30k offset by +21k of spot gains: total PnL -9k, no flow, so the base stays $10k
+    rows += [{"user": "0xa", "period": "allTime", "time_ms": ms(1), "account_value": 1_000.0, "pnl": -9_000.0},
+             {"user": "0xa", "period": "perpAllTime", "time_ms": ms(1), "account_value": 1_000.0, "pnl": -30_000.0}]
+    [ret] = period_returns(pl.DataFrame(rows), step_weeks=1).drop_nulls("ret")["ret"].to_list()
+    assert ret == -1.0
 
 
 def test_skilled_world_shows_persistence_and_random_does_not():

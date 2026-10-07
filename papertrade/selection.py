@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 import polars as pl
 
+from analysis.backtest import MAX_STEP_ABS_RET
 from analysis.persistence import formation_signals, period_returns
 from collector.storage import DATA_DIR, PLATFORM
 
@@ -42,7 +43,10 @@ def candidate_signals(now: datetime) -> pl.DataFrame:
     # Current size: latest total account value per trader.
     latest = (equity.filter(pl.col("period") == "allTime").sort("time_ms")
               .group_by("user").agg(account_value=pl.col("account_value").last()))
-    pool = signals.join(latest, on="user").filter(pl.col("account_value") >= MIN_TRADER_EQUITY)
+    pool = signals.join(latest, on="user").filter(
+        (pl.col("account_value") >= MIN_TRADER_EQUITY)
+        # Same rule as the backtest: a +/-100% step means leverage a 5x-capped book cannot mirror.
+        & (pl.col("max_abs_ret") <= MAX_STEP_ABS_RET))
 
     vaults = _read("vaults")
     if vaults is not None:
