@@ -30,6 +30,27 @@ Regla: **primero datos → análisis → simulación → automatización → din
 | 2026-10-08 → 10 | **TraderScore v1:** combinar persistencia (rendimiento/consistencia) y comportamiento; backtest sin look-ahead sobre universo + censo; entra como sexta estrategia del paper trading | Fase 4 |
 | ~2026-11-05 | Primer resultado forward a 30 días | Horizonte relevante para copiar |
 
+## Backlog (2026-10-07)
+
+Lo construido hasta hoy es infraestructura y medición. Lo que falta es inteligencia y control:
+
+**Desarrollo nuevo**
+1. TraderScore v1: rendimiento + consistencia + comportamiento; con Deflated Sharpe y mínimo de operaciones.
+2. Backtest de copy trading sobre universo + censo: top-N por score cada mes, con costos, vs Buy & Hold BTC (sección 41).
+3. Reglas de salida por comportamiento en el paper trading: leverage escalando, martingala, cambio de estilo → dejar de copiar.
+4. Risk engine y portafolio (secciones 27-28): correlación entre traders, exposición correlacionada, drawdown de portafolio, allocation por score.
+5. Realismo del simulador: tamaño mínimo de orden ($10) y decimales por moneda; posiciones no replicables con capital chico.
+6. Alertas al celular (Telegram / ntfy).
+7. Dashboard mínimo (sección 31).
+8. Descubrimiento vía Invo (dirección del builder → `builder_fills`).
+9. Capa de IA (fase 6): clasificación de estilo y explicaciones.
+10. Ejecución real (fase 7), solo tras paper trading confirmado.
+
+**Mejoras**
+- Descargar fills también para los candidatos que salgan del censo (hoy solo 300 wallets).
+- Tracking error del paper trading (nuestro retorno vs el del trader copiado).
+- CI en GitHub Actions.
+
 ## Puntos de decisión
 
 1. **~2026-10-08, ¿hay persistencia?** Con el censo (`ic_tstat ≥ 2`, `ic_positive ≥ 0.6`, mejor que `random`).
