@@ -1,7 +1,7 @@
 # copy-trader
 
 Investigación: ¿el rendimiento/riesgo pasado de un trader de Hyperliquid predice su rendimiento futuro?
-Ver [proyect.md](proyect.md) (visión completa), [ADR-001](docs/decisions/ADR-001-hyperliquid-first.md) (alcance actual) y [ROADMAP](docs/ROADMAP.md) (estado y siguientes pasos).
+Ver [proyect.md](proyect.md) (visión completa), [ADR-001](docs/decisions/ADR-001-hyperliquid-first.md) (alcance actual) , [ROADMAP](docs/ROADMAP.md) (estado y siguientes pasos) y [cómo funciona](docs/architecture/how-it-works.md) (qué decide el sistema, fases, dónde entra la IA).
 
 ## Uso
 
