@@ -96,6 +96,7 @@ def copy_backtest(
     ends = returns["end"].unique().sort()
     first, last = ends.min() + lookback_weeks * WEEK, ends.max() - hold_weeks * WEEK
     rows, equity, at, i = [], 1.0, first, 0
+    prev_chosen: set[str] = set()
     while at <= last:
         signals = _eligible_signals(returns, at, lookback_weeks, min_lookback, min_account, max_step_abs_ret,
                                     seed * 100_003 + i)
@@ -113,8 +114,10 @@ def copy_backtest(
         n_steps = int(hold_weeks * steps_per_week)
         net = (1 + gross) * (1 - rebalance_cost) * (1 - friction_per_step) ** n_steps - 1 if chosen else 0.0
         equity *= 1 + net
+        turnover = (sum(u not in prev_chosen for u in chosen) / len(chosen)) if chosen else None
+        prev_chosen = set(chosen)
         rows.append({"formation": at, "end": end, "n_selected": len(chosen), "n_missing": n_missing,
-                     "gross_ret": gross, "net_ret": net, "equity": equity})
+                     "turnover": turnover, "gross_ret": gross, "net_ret": net, "equity": equity})
         at, i = end, i + 1
     return pl.DataFrame(rows)
 
@@ -130,7 +133,7 @@ def buy_and_hold(prices: pl.DataFrame, periods: pl.DataFrame) -> pl.DataFrame:
         ret = (p1["close"][0] / p0["close"][0] - 1) if p0.height and p1.height else 0.0
         equity *= 1 + ret
         rows.append({"formation": r["formation"], "end": r["end"], "n_selected": 1, "n_missing": 0,
-                     "gross_ret": ret, "net_ret": ret, "equity": equity})
+                     "turnover": 0.0, "gross_ret": ret, "net_ret": ret, "equity": equity})
     return pl.DataFrame(rows)
 
 
@@ -152,17 +155,30 @@ def summarize_backtest(table: pl.DataFrame, hold_weeks: int = 4) -> dict[str, fl
     cagr = (equity[-1]) ** (1 / years) - 1 if years > 0 and equity[-1] > 0 else -1.0
     wins = r.filter(r > 0).sum()
     losses = -r.filter(r < 0).sum()
+    # Longest stretch (in periods) from an equity peak back to that peak: psychological risk.
+    peak, since_peak, recovery = equity[0], 0, 0
+    for value in equity:
+        if value >= peak:
+            peak, since_peak = value, 0
+        else:
+            since_peak += 1
+            recovery = max(recovery, since_peak)
     return {
         "periods": table.height,
         "total_return": total,
         "cagr": cagr,
         "max_drawdown": drawdown,
+        "volatility": std * math.sqrt(periods_per_year) if std else None,
         "sharpe": mean / std * math.sqrt(periods_per_year) if std else None,
         "sortino": mean / downside_std * math.sqrt(periods_per_year) if downside_std else None,
         "calmar": cagr / -drawdown if drawdown < 0 else None,
         "hit_rate": (r > 0).mean(),
         "profit_factor": wins / losses if losses > 0 else None,
+        "best_period": r.max(),
         "worst_period": r.min(),
+        "recovery_periods": recovery,
+        "avg_turnover": table["turnover"].drop_nulls().mean() if "turnover" in table.columns else None,
+        "time_invested": (table["n_selected"] > 0).mean(),
         "missing_share": table["n_missing"].sum() / max(table["n_selected"].sum(), 1),
     }
 

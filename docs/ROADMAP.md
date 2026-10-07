@@ -64,6 +64,10 @@ Pedido el 2026-10-07: un ranking para **acumular** cripto (y quizá acciones), s
 - Datos: velas diarias de todas las monedas de Hyperliquid (falta capturarlas); acciones requieren fuente de precios/fundamentales y bróker en México.
 - Estimación: 3-4 días. No empezar antes de la respuesta del censo y el TraderScore v1.
 
+## Congelamiento
+
+Parámetros de decisión congelados hasta el **2026-12-01** con criterio de éxito pre-registrado: [ADR-003](decisions/ADR-003-parameter-freeze.md). Prueba de familia de señales y multiplicidad: [research/2026-10-07-signal-family.md](research/2026-10-07-signal-family.md).
+
 ## Puntos de decisión
 
 1. ~~¿Hay persistencia?~~ **SÍ** (2026-10-07, con 20k traders del censo): las 4 señales pasan el criterio pre-registrado; top_sharpe +42 % CAGR con la mitad del drawdown de BTC; rankear por PnL (lo que hace el leaderboard) pierde dinero. Detalle y advertencias: [research/2026-10-07-persistence-census.md](research/2026-10-07-persistence-census.md). → Sigue: TraderScore v1 con walk-forward, y reinicio del paper trading con pool completo + risk engine.

@@ -76,5 +76,13 @@ def test_buy_and_hold_and_metrics():
     assert bh["gross_ret"].to_list() == pytest.approx([1.01 ** 28 - 1] * 3, rel=1e-9)
     m = summarize_backtest(bh)
     assert m["max_drawdown"] == 0 and m["hit_rate"] == 1 and m["cagr"] > 0
+    assert m["recovery_periods"] == 0 and m["time_invested"] == 1 and m["best_period"] >= m["worst_period"]
     table = compare({"bh": bh, "bh2": bh})
     assert table.height == 2 and "sharpe" in table.columns
+
+
+def test_turnover_counts_new_traders_per_rebalance():
+    data = world(n_wallets=30, weeks=40, seed=9)
+    table = copy_backtest(returns_of(data), top_by("ret", 5), rebalance_cost=0.0)
+    t = table["turnover"].drop_nulls()
+    assert (t >= 0).all() and (t <= 1).all() and t[0] == 1.0  # first formation: everyone is new
