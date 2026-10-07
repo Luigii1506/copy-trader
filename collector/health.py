@@ -8,6 +8,7 @@ allows. Prints a report and returns 1 on any FAIL, so a caller can alert on the 
 from __future__ import annotations
 
 import shutil
+import sqlite3
 from datetime import datetime, timedelta
 
 from .storage import DATA_DIR, read_json, utcnow
@@ -22,6 +23,7 @@ MAX_AGE = {
 MAX_SNAPSHOT_AGE = timedelta(hours=30)
 MAX_WALLET_FAILURE_RATE = 0.10
 MIN_FREE_GB = 20
+PAPERTRADE_MAX_AGE = timedelta(minutes=20)  # snapshots every 5 min
 
 
 def check() -> list[tuple[str, str]]:
@@ -53,6 +55,20 @@ def check() -> list[tuple[str, str]]:
         if wallets["gap_suspected"]:
             results.append(("WARN", f"wallets: possible fill gaps for {len(wallets['gap_suspected'])} wallets "
                                     "(they trade faster than we poll)"))
+
+    papertrade_db = DATA_DIR / "papertrade" / "papertrade.db"
+    if papertrade_db.exists():
+        with sqlite3.connect(papertrade_db) as db:
+            last = db.execute("select max(ts) from equity").fetchone()[0]
+            halted = [r[0] for r in db.execute("select name from strategies where status = 'halted'")]
+        if last is None:
+            results.append(("FAIL", "papertrade: no equity snapshot yet"))
+        else:
+            age = now - datetime.fromisoformat(last)
+            level = "OK" if age <= PAPERTRADE_MAX_AGE else "FAIL"
+            results.append((level, f"papertrade: last snapshot {age.total_seconds() / 60:.0f} min ago"))
+        if halted:
+            results.append(("WARN", f"papertrade: halted strategies: {', '.join(halted)}"))
 
     free_gb = shutil.disk_usage(DATA_DIR).free / 1e9
     results.append(("OK" if free_gb >= MIN_FREE_GB else "FAIL", f"disk: {free_gb:.0f} GB free"))

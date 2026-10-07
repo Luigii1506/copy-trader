@@ -38,8 +38,9 @@ def period_returns(
 ) -> pl.DataFrame:
     """Trading returns per wallet on a common grid of `step_weeks`-long steps, Sunday 00:00 UTC.
 
-    Return = change in cumulative PnL / account value at the start of the step. Using PnL rather
-    than account value keeps deposits and withdrawals out of returns. Steps that start with less
+    Return = change in cumulative PnL / Modified Dietz capital (start value + half of the step's net
+    deposits). PnL in the numerator keeps deposits out of gains; the Dietz denominator keeps them
+    from inflating the ratio when they land mid-step. Steps that start with less
     than `min_account` get a null return (tiny denominators produce meaningless percentages).
 
     Defaults come from the data: portfolio() returns ~70-110 points per wallet regardless of age,
@@ -86,11 +87,18 @@ def period_returns(
     prev = lambda c: pl.col(c).shift(1).over("user")
     return (
         snapped.with_columns(dpnl=pl.col("pnl") - prev("pnl"))
+        # Modified Dietz: net deposits/withdrawals during the step (value change not explained by PnL)
+        # are assumed to arrive mid-step and count half. We only see a point every ~2 weeks, so
+        # their timing is unknown; dividing by the starting value alone would turn "$200k deposited
+        # onto a $1.5k account, then $20k earned" into a +1,333% return.
+        .with_columns(flow=pl.col("account_value") - prev("account_value") - pl.col("dpnl"))
+        .with_columns(capital=prev("account_value") + 0.5 * pl.col("flow"))
         .with_columns(
-            # Null when the start is too small, or when both boundaries snapped to the same
-            # observation (a gap in the series would otherwise read as a flat 0% step).
-            ret=pl.when((prev("account_value") >= min_account) & (pl.col("ts") != prev("ts")))
-            .then(pl.col("dpnl") / prev("account_value"))
+            # Null when the start is too small, when withdrawals leave no meaningful capital, or when
+            # both boundaries snapped to the same observation (a gap would read as a flat 0% step).
+            ret=pl.when((prev("account_value") >= min_account) & (pl.col("capital") >= 0.5 * min_account)
+                        & (pl.col("ts") != prev("ts")))
+            .then(pl.col("dpnl") / pl.col("capital"))
         )
         .select("user", "end", "account_value", "pnl", "dpnl", "ret")
     )

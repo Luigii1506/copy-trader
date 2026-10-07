@@ -39,15 +39,22 @@ def world(n_wallets=200, weeks=60, skill_sd=0.02, noise_sd=0.03, seed=1):
     return out
 
 
-def test_returns_ignore_deposits():
-    eq = equity_from_returns({"0xa": [0.01, 0.01]})
-    # A deposit during week 1 doubles account value without changing PnL.
-    eq = eq.with_columns(pl.when(pl.col("pnl") > 50).then(pl.col("account_value") * 2)
-                         .otherwise(pl.col("account_value")).alias("account_value"))
-    rets = period_returns(eq, step_weeks=1).drop_nulls("ret")["ret"].to_list()
-    assert len(rets) == 2
-    assert abs(rets[0] - 0.01) < 1e-9          # the deposit is not counted as a gain
-    assert abs(rets[1] - 101 / 20_200) < 1e-9  # later returns are on the larger capital
+def test_returns_without_flows_are_simple_returns():
+    rets = period_returns(equity_from_returns({"0xa": [0.01, 0.02]}), step_weeks=1).drop_nulls("ret")["ret"]
+    assert [round(r, 9) for r in rets] == [0.01, 0.02]
+
+
+def test_mid_step_deposit_does_not_inflate_returns():
+    ms = lambda w: int((START + timedelta(weeks=w, hours=-1)).timestamp() * 1000)
+    eq = pl.DataFrame([
+        {"user": "0xa", "period": "allTime", "time_ms": ms(0), "account_value": 1_500.0, "pnl": 0.0},
+        # $200k deposited during the week, then $20k earned trading it
+        {"user": "0xa", "period": "allTime", "time_ms": ms(1), "account_value": 221_500.0, "pnl": 20_000.0},
+    ])
+    [ret] = period_returns(eq, step_weeks=1).drop_nulls("ret")["ret"].to_list()
+    # Modified Dietz: 20k / (1.5k + 200k / 2) = 19.7%. True value is 10%-1,333% depending on
+    # when the deposit landed; the mid-step assumption keeps it bounded instead of exploding.
+    assert abs(ret - 20_000 / (1_500 + 100_000)) < 1e-9
 
 
 def test_skilled_world_shows_persistence_and_random_does_not():

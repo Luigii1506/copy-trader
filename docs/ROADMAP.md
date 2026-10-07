@@ -9,7 +9,8 @@ Regla: **primero datos → análisis → simulación → automatización → din
 
 - **M0 (parcial):** Hyperliquid investigado y elegido ([hyperliquid.md](platforms/hyperliquid.md)). Invo identificado como capa sobre Hyperliquid ([invo.md](platforms/invo.md)).
 - **M1, data pipeline:** collector, raw → Parquet, scheduling en la Mac Studio, backup en la laptop, health check con alertas y tests.
-- **M2 (inicio), método de persistencia:** [`analysis/persistence.py`](../analysis/persistence.py), validado con mundos sintéticos; notebook [01_persistence](../notebooks/01_persistence.ipynb).
+- **M2 (inicio), método de persistencia:** [`analysis/persistence.py`](../analysis/persistence.py), validado con mundos sintéticos; notebook [01_persistence](../notebooks/01_persistence.ipynb). Retornos con Modified Dietz para que los depósitos no inflen resultados.
+- **M3 (adelantado), motor de paper trading:** [`papertrade/`](../papertrade), 5 estrategias en paralelo con random como control ([ADR-002](decisions/ADR-002-paper-trading.md)). Copia proporcional en todos los perp dex (incluido HIP-3), con precios de impacto, fees, funding horario, kill switches y auditoría.
 
 ## Siguiente
 
@@ -19,7 +20,9 @@ Regla: **primero datos → análisis → simulación → automatización → din
 | 2026-10-07 | **Primera respuesta seria de persistencia** con el censo parcial y luego completo | Decide si seguimos con TraderScore |
 | 2026-10-07 → 09 | Si hay señal: TraderScore v1 + **simulador de copy trading histórico** sobre el censo (fees, slippage, sizing) | La pregunta práctica: ¿cuánto habría ganado/perdido quien copiara? |
 | 2026-10-07 → 09 | Leer `state/leaderboard_versions.jsonl` y ajustar el espaciado de snapshots a la cadencia real | Ahora se guarda máx. 1 cada 6 h a ciegas |
-| ~2026-10-12 | **Paper trading en vivo** con el TraderScore v1 | Es el paso que sí necesita tiempo real: validar fuera de muestra |
+| 2026-10-06 → 07 | **Paper trading en rodaje** (shakedown) con un pool parcial | Encontrar bugs en vivo antes del arranque oficial |
+| ~2026-10-07 (al terminar el censo) | **Arranque oficial del paper trading:** se reinicia la base con el pool completo (universo + censo) | Que la selección inicial no dependa de un pool a medio descargar |
+| cuando exista | TraderScore v1 entra como sexta estrategia | Se compara en vivo contra las demás y contra random |
 | 2026-10-13 | Primer resultado forward (horizonte 1 semana) | Confirmación sin look-ahead |
 | octubre | Verificar mercados HIP-3 (`dex`) en posiciones y fills | Podríamos no estar capturando posiciones en perpetuos de acciones |
 | octubre | Dirección del builder de Invo → wallets de Invo vía `builder_fills` | Discovery de traders "copiables" |

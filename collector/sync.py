@@ -6,6 +6,9 @@
     python -m collector.sync normalize     # raw JSON -> Parquet tables (see collector/normalize.py)
     python -m collector.sync health        # are the jobs running on schedule? exit code 1 if not
     python -m collector.sync census        # equity history of every leaderboard trader (one-off, resumable)
+    python -m collector.sync papertrade    # paper-trading engine, runs forever (docs/decisions/ADR-002)
+    python -m collector.sync papertrade-status
+    python -m collector.sync papertrade-halt   # kill switch: close every paper position and stop
 
 Installed as the `copy-trader` command (`uv tool install .`), which is what launchd runs.
 """
@@ -173,12 +176,23 @@ def job_lock(name: str) -> Iterator[bool]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hyperliquid raw data collector")
-    parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize", "health", "census"])
+    parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize", "health", "census",
+                                        "papertrade", "papertrade-status", "papertrade-halt"])
     parser.add_argument("--limit", type=int, help="only sync the first N tracked wallets (for testing)")
     args = parser.parse_args()
 
     if args.job == "health":
         raise SystemExit(health.main())
+    if args.job == "papertrade-status":
+        from papertrade import status
+        raise SystemExit(status.main())
+    if args.job == "papertrade-halt":
+        from papertrade.engine import KILL_FILE
+        KILL_FILE.parent.mkdir(parents=True, exist_ok=True)
+        KILL_FILE.touch()
+        print(f"kill switch set ({KILL_FILE}); the engine closes all positions on its next step. "
+              "Delete the file to allow a restart.")
+        return
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -189,6 +203,10 @@ def main() -> None:
             return
         if args.job == "normalize":
             normalize.run()
+            return
+        if args.job == "papertrade":
+            from papertrade.engine import run_forever
+            run_forever()
             return
         if args.job == "census":
             client = HyperliquidClient()

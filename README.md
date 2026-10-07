@@ -27,6 +27,8 @@ Corre en la Mac Studio (`admin@admins-mac-studio` por Tailscale), repo en `~/cop
 | `leaderboard` | cada hora | revisa si hay versión nueva del leaderboard; guarda máx. 1 cada 6 h (+ vaults) y refresca universo |
 | `wallets` | 02:30 08:30 14:30 18:30 | estado, portfolio y fills nuevos |
 | `normalize` | 04:15 19:45 | crudo → Parquet |
+| `census` | manual | curvas de capital de ~43k traders del leaderboard (una vez, reanudable) |
+| `papertrade` | siempre (KeepAlive) | motor de paper trading ([ADR-002](docs/decisions/ADR-002-paper-trading.md)) |
 
 - Prioridad baja de CPU/IO, `caffeinate -i` durante la corrida y un lock por job (si sigue corriendo, la siguiente se salta).
 - Si la Mac está dormida a la hora programada, el job corre una vez al despertar. **Con la tapa cerrada la Mac duerme y no recolecta.**
@@ -47,6 +49,15 @@ Copia a `~/data/copy-trader-backup` y ejecuta `copy-trader health` en la Studio.
 uv sync --all-groups     # incluye research (DuckDB, Jupyter) y dev (pytest)
 uv run pytest
 ```
+
+## Paper trading
+
+```bash
+copy-trader papertrade-status    # equity, retorno, drawdown y leverage por estrategia
+copy-trader papertrade-halt      # kill switch: cierra todas las posiciones simuladas y detiene
+```
+
+Estado y auditoría en `~/data/copy-trader/papertrade/papertrade.db` (SQLite): tablas `strategies`, `books`, `positions`, `events` (cada operación con su motivo) y `equity`.
 
 ## Datos
 

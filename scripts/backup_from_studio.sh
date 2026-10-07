@@ -2,8 +2,8 @@
 # Runs on the laptop. Pulls an off-machine copy of the irreplaceable data from the Mac Studio and
 # raises a macOS notification if the Studio's collector is unhealthy or unreachable.
 #
-# Only raw/, universe/ and state/ are copied: processed/ is rebuilt from raw/. No --delete, so a
-# file lost on the Studio is never removed from the backup.
+# Copied: raw/, universe/, state/ and a consistent snapshot of the paper-trading database.
+# processed/ is rebuilt from raw/. No --delete, so a file lost on the Studio is never removed here.
 set -uo pipefail
 
 HOST="${COPY_TRADER_HOST:-admin@100.88.239.107}"
@@ -17,7 +17,10 @@ notify() {
 
 echo "== $(date -u +%FT%TZ) backup"
 mkdir -p "$DEST"
+# The paper-trading database is written continuously: take a consistent SQLite snapshot first.
+$SSH "$HOST" 'db=~/data/copy-trader/papertrade/papertrade.db; [ -f "$db" ] && sqlite3 "$db" ".backup $HOME/data/copy-trader/papertrade/snapshot.db" || true'
 if ! rsync -az -e "$SSH" --exclude '*.lock' --include 'raw/***' --include 'universe/***' --include 'state/***' \
+     --include 'papertrade/' --include 'papertrade/snapshot.db' \
      --exclude '*' "$HOST:data/copy-trader/" "$DEST/"; then
   notify "Backup failed: Mac Studio unreachable?"
   exit 1
