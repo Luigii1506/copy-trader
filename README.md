@@ -54,10 +54,10 @@ En `~/data/copy-trader` (`data/` en el repo es un symlink). Se puede cambiar con
 
 ```
 data/raw/hyperliquid/<dataset>/date=YYYY-MM-DD/<run>.jsonl.gz   respuestas crudas con envelope
-data/processed/hyperliquid/<tabla>/date=.../<run>.parquet       leaderboard, account_snapshots, positions, equity_history, fills
+data/processed/hyperliquid/<tabla>/date=.../<run>.parquet       leaderboard, vaults, account_snapshots, positions, equity_history, fills
 data/universe/hyperliquid.json                                  wallets rastreadas (append-only)
 data/state/hyperliquid_fills_cursor.json                        cursor de fills por wallet
 ```
 
 Consulta con DuckDB: `read_parquet('data/processed/hyperliquid/fills/*/*.parquet', union_by_name=true)`.
-Fills y equity_history se repiten entre corridas: deduplicar por `(user, tid, oid)` y `(user, window, time_ms)`.
+Fills y equity_history se repiten entre corridas: deduplicar por `(user, tid, oid)` y `(user, period, time_ms)`.

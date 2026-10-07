@@ -69,3 +69,6 @@ Los trades que usan un builder code se publican a diario [Doc]:
 
 - Las wallets con más valor del leaderboard (~$1B) probablemente sean vaults o direcciones del protocolo (p. ej. HLP), no traders. Hay que identificarlas y excluirlas del estudio de persistencia.
 - Mercados HIP-3 (perpetuos creados por terceros, incluidos los de acciones): varios endpoints aceptan `dex`. Hoy el collector solo consulta el mercado principal, así que las posiciones en HIP-3 podrían faltar. Pendiente de verificar.
+- **Resolución de `portfolio`:** ~70-110 puntos por wallet sin importar la antigüedad. Historias largas → un punto cada ~14 días; cortas → ~7 días o menos. El análisis usa pasos de 2 semanas por eso (ver `analysis/persistence.py`).
+- **`perpAllTime` vs `allTime`:** ~25 % de las wallets muestran cuenta perp ≈ 0 casi siempre (guardan colateral fuera de perp). Para retornos usamos `allTime` (capital total).
+- **Vaults** (`GET stats-data.hyperliquid.xyz/Mainnet/vaults`) **[No doc]**: 9,476 vaults (3,091 abiertas) con líder, TVL, APR y estado. Son el copy trading nativo de Hyperliquid (un líder opera con depósitos de seguidores) y candidatas para el "modelo A". 708 direcciones del leaderboard son vaults; se excluyen del estudio de traders. Las ~10 cuentas más grandes del leaderboard (~$0.2-1B) **no** son vaults: probablemente market makers o instituciones.

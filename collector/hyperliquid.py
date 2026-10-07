@@ -3,7 +3,7 @@
 Sources:
 - Info endpoint: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint
 - Rate limits:   https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits
-- Leaderboard:   stats-data.hyperliquid.xyz (used by the official frontend; NOT in the API docs)
+- Leaderboard / vaults: stats-data.hyperliquid.xyz (used by the official frontend; NOT in the API docs)
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 
 INFO_URL = "https://api.hyperliquid.xyz/info"
 LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
+VAULTS_URL = "https://stats-data.hyperliquid.xyz/Mainnet/vaults"
 
 # Documented: 1200 weight/min per IP. Stay below it to leave headroom.
 WEIGHT_PER_MINUTE = 1000
@@ -97,10 +98,16 @@ class HyperliquidClient:
                 log.warning("%s failed (%s); retrying in %ss", request_type, exc, wait)
                 time.sleep(wait)
 
-    def leaderboard(self) -> dict[str, Any]:
-        resp = self.http.get(LEADERBOARD_URL, timeout=180.0)
+    def _stats(self, url: str) -> Any:
+        resp = self.http.get(url, timeout=180.0)
         resp.raise_for_status()
         return resp.json()
+
+    def leaderboard(self) -> dict[str, Any]:
+        return self._stats(LEADERBOARD_URL)
+
+    def vaults(self) -> list[dict[str, Any]]:
+        return self._stats(VAULTS_URL)
 
     def clearinghouse_state(self, user: str) -> dict[str, Any]:
         return self.info({"type": "clearinghouseState", "user": user})

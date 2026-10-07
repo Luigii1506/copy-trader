@@ -104,6 +104,15 @@ def test_equity_rows_join_value_and_pnl():
     assert [(r["time_ms"], r["account_value"], r["pnl"]) for r in rows] == [(1, 10, 0), (2, 12, 2)]
 
 
+def test_vault_rows():
+    record = {"fetched_at": "t", "payload": [{"apr": 0.04, "pnls": [], "summary": {
+        "name": "HLP", "vaultAddress": "0xDFC", "leader": "0xABC", "tvl": "1000.5", "isClosed": False,
+        "relationship": {"type": "parent"}, "createTimeMillis": 1}}]}
+    [row] = normalize.vault_rows(record)
+    assert row["vault_address"] == "0xdfc" and row["leader"] == "0xabc"
+    assert row["tvl"] == 1000.5 and row["relationship"] == "parent" and not row["is_closed"]
+
+
 def test_normalize_run_tolerates_truncated_raw_file(data_dir):
     raw = data_dir / "raw" / "hyperliquid" / "fills" / "date=2026-10-06" / "20261006T000000Z.jsonl.gz"
     raw.parent.mkdir(parents=True)

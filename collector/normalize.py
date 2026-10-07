@@ -7,7 +7,8 @@ Tables:
     leaderboard        one row per wallet per leaderboard snapshot (the persistence-study universe)
     account_snapshots  one row per wallet per clearinghouseState call
     positions          one row per open position per clearinghouseState call
-    equity_history     portfolio() account value / PnL series (repeats across runs; dedup when querying)
+    equity_history     portfolio() account value / PnL series per period (repeats across runs; dedup when querying)
+    vaults             one row per vault per vaults snapshot (Hyperliquid's native copy trading)
     fills              one row per fill (overlaps across runs; dedup on user, tid, oid when querying)
 
 A raw file is (re)processed when its Parquet is missing or older than it, and skipped while it is
@@ -105,16 +106,34 @@ def position_rows(record: dict[str, Any]) -> Rows:
 
 def equity_rows(record: dict[str, Any]) -> Rows:
     rows = []
-    for window, series in record["payload"]:
+    for period, series in record["payload"]:
         pnl = dict(series["pnlHistory"])
         for ts, value in series["accountValueHistory"]:
             rows.append({
                 "user": record["request"]["user"],
-                "window": window,
+                "period": period,
                 "time_ms": ts,
                 "account_value": _f(value),
                 "pnl": _f(pnl.get(ts)),
             })
+    return rows
+
+
+def vault_rows(record: dict[str, Any]) -> Rows:
+    rows = []
+    for v in record["payload"]:
+        s = v["summary"]
+        rows.append({
+            "snapshot_at": record["fetched_at"],
+            "vault_address": s["vaultAddress"].lower(),
+            "leader": s["leader"].lower(),
+            "name": s["name"],
+            "tvl": _f(s["tvl"]),
+            "apr": _f(v.get("apr")),
+            "is_closed": s["isClosed"],
+            "relationship": s.get("relationship", {}).get("type"),
+            "created_ms": s.get("createTimeMillis"),
+        })
     return rows
 
 
@@ -144,6 +163,7 @@ TABLES: dict[str, list[tuple[str, Callable[[dict[str, Any]], Rows]]]] = {
     "clearinghouse_state": [("account_snapshots", account_rows), ("positions", position_rows)],
     "portfolio": [("equity_history", equity_rows)],
     "fills": [("fills", fill_rows)],
+    "vaults": [("vaults", vault_rows)],
 }
 
 

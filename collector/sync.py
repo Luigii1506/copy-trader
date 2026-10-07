@@ -1,6 +1,6 @@
 """Collector entry point.
 
-    python -m collector.sync leaderboard   # full leaderboard snapshot + universe refresh (run daily)
+    python -m collector.sync leaderboard   # full leaderboard + vaults snapshots, universe refresh (run daily)
     python -m collector.sync wallets       # state, portfolio and new fills for every tracked wallet
     python -m collector.sync all           # both, in that order
     python -m collector.sync normalize     # raw JSON -> Parquet tables (see collector/normalize.py)
@@ -48,8 +48,15 @@ def sync_leaderboard(client: HyperliquidClient) -> None:
     RawWriter("leaderboard", started).write(envelope("leaderboard", {"url": "leaderboard"}, board, started))
     _, added = universe.refresh(board, started)
     rows = len(board["leaderboardRows"])
-    write_json(last_run_path("leaderboard"), {"finished_at": utcnow().isoformat(), "rows": rows, "added": added})
     log.info("leaderboard: %d rows saved, %d wallets added to universe", rows, added)
+
+    # Vaults are Hyperliquid's native copy trading, and their addresses must be told apart from traders.
+    fetched = utcnow()
+    vaults = client.vaults()
+    RawWriter("vaults", fetched).write(envelope("vaults", {"url": "vaults"}, vaults, fetched))
+    log.info("vaults: %d saved", len(vaults))
+    write_json(last_run_path("leaderboard"),
+               {"finished_at": utcnow().isoformat(), "rows": rows, "added": added, "vaults": len(vaults)})
 
 
 def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
