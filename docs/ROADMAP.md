@@ -10,6 +10,7 @@ Regla: **primero datos → análisis → simulación → automatización → din
 - **M0 (parcial):** Hyperliquid investigado y elegido ([hyperliquid.md](platforms/hyperliquid.md)). Invo identificado como capa sobre Hyperliquid ([invo.md](platforms/invo.md)).
 - **M1, data pipeline:** collector, raw → Parquet, scheduling en la Mac Studio, backup en la laptop, health check con alertas y tests.
 - **M2 (inicio), método de persistencia:** [`analysis/persistence.py`](../analysis/persistence.py), validado con mundos sintéticos; notebook [01_persistence](../notebooks/01_persistence.ipynb). Retornos con Modified Dietz para que los depósitos no inflen resultados.
+- **M2, señales de comportamiento:** [`analysis/behavior.py`](../analysis/behavior.py) reconstruye operaciones desde los fills (incl. flips y liquidaciones) y mide averaging down, martingala, leverage, concentración, sobreoperación, dependencia de un trade y cambios de estilo. Validado con secuencias sintéticas; detecta en datos reales un trader con +3,500 % de retorno, 10x de leverage mediano y 13 liquidaciones en 90 días.
 - **M3 (adelantado), motor de paper trading:** [`papertrade/`](../papertrade), 5 estrategias en paralelo con random como control ([ADR-002](decisions/ADR-002-paper-trading.md)). Copia proporcional en todos los perp dex (incluido HIP-3), con precios de impacto, fees, funding horario, kill switches y auditoría.
 
 ## Siguiente
@@ -26,7 +27,7 @@ Regla: **primero datos → análisis → simulación → automatización → din
 | 2026-10-13 | Primer resultado forward (horizonte 1 semana) | Confirmación sin look-ahead |
 | octubre | Verificar mercados HIP-3 (`dex`) en posiciones y fills | Podríamos no estar capturando posiciones en perpetuos de acciones |
 | octubre | Dirección del builder de Invo → wallets de Invo vía `builder_fills` | Discovery de traders "copiables" |
-| oct–nov | **M2 completo:** reconstruir trades y posiciones desde fills → leverage, martingala, averaging down, concentración | Las señales de comportamiento del plan (sección 18) |
+| 2026-10-08 → 10 | **TraderScore v1:** combinar persistencia (rendimiento/consistencia) y comportamiento; backtest sin look-ahead sobre universo + censo; entra como sexta estrategia del paper trading | Fase 4 |
 | ~2026-11-05 | Primer resultado forward a 30 días | Horizonte relevante para copiar |
 
 ## Puntos de decisión

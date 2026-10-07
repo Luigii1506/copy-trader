@@ -40,7 +40,7 @@ PROCESSED_DIR = DATA_DIR / "processed" / PLATFORM
 SETTLE_SECONDS = 300
 # Bump whenever a row builder changes its columns or semantics: every processed table is then
 # rebuilt from raw on the next run, so old and new schemas never coexist.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 VERSION_FILE = PROCESSED_DIR / "SCHEMA_VERSION"
 
 Rows = list[dict[str, Any]]
@@ -170,6 +170,9 @@ def fill_rows(record: dict[str, Any]) -> Rows:
         "fee": _f(f["fee"]),
         "fee_token": f.get("feeToken"),
         "crossed": f.get("crossed"),
+        # Liquidation fills carry the liquidated party, which may be the counterparty of this user.
+        "liquidated": (f.get("liquidation") or {}).get("liquidatedUser", "").lower() == record["request"]["user"].lower(),
+        "builder_fee": _f(f.get("builderFee")),  # present when routed through a builder code (e.g. Invo)
         "oid": f["oid"],
         "tid": f["tid"],
         "hash": f["hash"],

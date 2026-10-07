@@ -106,6 +106,14 @@ def test_equity_rows_join_value_and_pnl():
     assert [(r["time_ms"], r["account_value"], r["pnl"]) for r in rows] == [(1, 10, 0), (2, 12, 2)]
 
 
+def test_fill_rows_flag_own_liquidations_and_builder_fees():
+    liq = fill(1, 1, liquidation={"liquidatedUser": "0xABC", "markPx": "1", "method": "market"}, builderFee="0.01")
+    other = fill(2, 2, liquidation={"liquidatedUser": "0xdef", "markPx": "1", "method": "market"})
+    rows = normalize.fill_rows({"request": {"user": "0xabc"}, "payload": [liq, other, fill(3, 3)]})
+    assert [r["liquidated"] for r in rows] == [True, False, False]
+    assert [r["builder_fee"] for r in rows] == [0.01, None, None]
+
+
 def test_vault_rows():
     record = {"fetched_at": "t", "payload": [{"apr": 0.04, "pnls": [], "summary": {
         "name": "HLP", "vaultAddress": "0xDFC", "leader": "0xABC", "tvl": "1000.5", "isClosed": False,
