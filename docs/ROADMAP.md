@@ -20,7 +20,7 @@ Regla: **primero datos → análisis → simulación → automatización → din
 | Cuándo | Qué | Por qué |
 |---|---|---|
 | 2026-10-06 (en curso) | **Censo:** curvas de capital de ~43k traders del leaderboard, incluidos perdedores y quebrados (~30 h: comparte la cuota de API con el paper trading) | Responde la pregunta central en días, con poco sesgo de supervivencia |
-| 2026-10-07 | **Primera respuesta seria de persistencia** con el censo parcial y luego completo | Decide si seguimos con TraderScore |
+| ~~2026-10-07~~ | ~~Primera respuesta de persistencia~~ **hecha: hay señal** | ver punto de decisión 1 |
 | 2026-10-07 → 09 | Si hay señal: TraderScore v1 + **simulador de copy trading histórico** sobre el censo (fees, slippage, sizing) | La pregunta práctica: ¿cuánto habría ganado/perdido quien copiara? |
 | 2026-10-07 → 09 | Leer `state/leaderboard_versions.jsonl` y ajustar el espaciado de snapshots a la cadencia real | Ahora se guarda máx. 1 cada 6 h a ciegas |
 | 2026-10-06 17:45 PDT | **Paper trading en rodaje** (shakedown) con un pool parcial: 5 estrategias × 10 traders × $10k virtuales | Encontrar bugs en vivo antes del arranque oficial |
@@ -66,8 +66,7 @@ Pedido el 2026-10-07: un ranking para **acumular** cripto (y quizá acciones), s
 
 ## Puntos de decisión
 
-1. **~2026-10-08, ¿hay persistencia?** Con el censo (`ic_tstat ≥ 2`, `ic_positive ≥ 0.6`, mejor que `random`).
-   Si la hay, seguimos con TraderScore, simulador y paper trading. Si no, lo documentamos y replanteamos (comportamiento, vaults, otros horizontes) antes de construir más.
+1. ~~¿Hay persistencia?~~ **SÍ** (2026-10-07, con 20k traders del censo): las 4 señales pasan el criterio pre-registrado; top_sharpe +42 % CAGR con la mitad del drawdown de BTC; rankear por PnL (lo que hace el leaderboard) pierde dinero. Detalle y advertencias: [research/2026-10-07-persistence-census.md](research/2026-10-07-persistence-census.md). → Sigue: TraderScore v1 con walk-forward, y reinicio del paper trading con pool completo + risk engine.
 2. **~mediados de noviembre, ¿capital pequeño?** Solo si el paper trading en vivo (≥ 4-6 semanas) se comporta como predijo la simulación.
 
 **Opción para acelerar todavía más:** Hyperliquid publica en S3 todos los fills de todos los usuarios (`hl-mainnet-node-data`, requester-pays). Permitiría un backtest completo a nivel de operación, pero requiere una cuenta de AWS y pagar la transferencia de datos.
