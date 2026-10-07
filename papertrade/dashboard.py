@@ -125,6 +125,55 @@ def events_section(store: Store) -> str:
     return "".join(out)
 
 
+def ranking_section() -> str:
+    """Plan section 36 item 8: the current TraderScore ranking (written by the wallets job)."""
+    ranking = read_json(DATA_DIR / "state" / "ranking.json", None)
+    if not ranking:
+        return ""
+    out = [f'<h2>Ranking TraderScore <span class="sub">({ranking["eligible"]:,} elegibles · '
+           f'{ranking["generated_at"][:16]} UTC)</span></h2>',
+           '<table><tr><th>#</th><th>trader</th><th class="num">score</th><th class="num">sharpe</th>'
+           '<th class="num">max DD</th><th class="num">consistencia</th><th class="num">capital</th>'
+           '<th>comportamiento</th></tr>']
+    for i, r in enumerate(ranking["top"], 1):
+        if r.get("behavior_known"):
+            penalty = r.get("behavior_penalty") or 0
+            behavior = (f'<span class="bad">−{penalty:.0f} pts</span>' if penalty
+                        else '<span class="good">limpio</span>')
+        else:
+            behavior = '<span class="muted">sin fills aún</span>'
+        out.append(
+            f'<tr><td>{i}</td><td>{r["user"][:10]}…</td>'
+            f'<td class="num">{r["trader_score"]:.1f}</td>'
+            f'<td class="num">{r["sharpe"]:.2f}</td>'
+            f'<td class="num">{r["low_dd"]:.1%}</td>'
+            f'<td class="num">{r["consistency"]:.0%}</td>'
+            f'<td class="num">${r["account_value"]:,.0f}</td>'
+            f'<td>{behavior}</td></tr>')
+    out.append("</table>")
+    return "".join(out)
+
+
+def benchmark_line(store: Store) -> str:
+    """BTC's return over the same live window: the bar the strategies have to clear."""
+    try:
+        from .selection import _read
+        candles = _read("candles")
+        start = store.db.execute("select min(started_at) from strategies").fetchone()[0]
+        if candles is None or start is None:
+            return ""
+        start_ms = int(datetime.fromisoformat(start).timestamp() * 1000)
+        btc = (candles.filter(candles["coin"] == "BTC").sort("snapshot_at")
+               .unique(subset=["time_ms"], keep="last").sort("time_ms"))
+        before = btc.filter(btc["time_ms"] <= start_ms)
+        if before.is_empty():
+            return ""
+        ret = btc["close"][-1] / before["close"][-1] - 1
+        return f'<p class="sub">Buy &amp; Hold BTC en el mismo periodo: {pct(ret)} · random es el control</p>'
+    except Exception:
+        return ""
+
+
 def collector_section() -> str:
     lines = []
     for level, message in health.check():
@@ -145,6 +194,8 @@ def build(now: datetime) -> str:
         store = Store()
         try:
             body.append(strategies_section(store, now))
+            body.append(benchmark_line(store))
+            body.append(ranking_section())
             body.append(events_section(store))
         finally:
             store.close()

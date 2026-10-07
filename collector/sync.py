@@ -135,13 +135,23 @@ def candidate_wallets() -> list[str]:
 
     Their fills make behavior penalties and exit rules apply to the wallets the engine is most
     likely to pick next, instead of only to those it already follows. Append-only via the
-    `candidates` cohort, so the covered set only grows."""
+    `candidates` cohort, so the covered set only grows. Also writes state/ranking.json: the
+    top of the TraderScore ranking that the dashboard shows (plan section 36, "mostrar ranking")."""
     try:
         import polars as pl
         from papertrade.selection import candidate_signals
-        pool = candidate_signals(utcnow())
-        by_score = (pool.filter(pl.col("trader_score").is_not_null())
-                    .sort("trader_score", descending=True).head(CANDIDATES_TOP_SCORE)["user"].to_list())
+        now = utcnow()
+        pool = candidate_signals(now)
+        scored = pool.filter(pl.col("trader_score").is_not_null()).sort("trader_score", descending=True)
+        write_json(DATA_DIR / "state" / "ranking.json", {
+            "generated_at": now.isoformat(),
+            "eligible": scored.height,
+            "top": scored.head(20).select(
+                "user", "trader_score", "sharpe", "low_dd", "consistency", "n_obs",
+                "account_value", "behavior_known", "behavior_penalty",
+            ).to_dicts(),
+        })
+        by_score = scored.head(CANDIDATES_TOP_SCORE)["user"].to_list()
         by_sharpe = (pool.filter(pl.col("sharpe").is_not_null() & pl.col("sharpe").is_finite())
                      .sort("sharpe", descending=True).head(CANDIDATES_TOP_SHARPE)["user"].to_list())
         return sorted(set(by_score) | set(by_sharpe))

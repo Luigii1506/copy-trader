@@ -257,10 +257,16 @@ def test_dashboard_builds_from_store(setup, monkeypatch, tmp_path):
     store.commit()
     monkeypatch.setattr(dashboard, "DB_PATH", tmp_path / "pt.db")
     monkeypatch.setattr(dashboard, "Store", lambda: store)
-    monkeypatch.setattr(dashboard, "read_json", lambda path, default: {"done": 10, "wallets": ["w"] * 40})
+    fake_state = {"census.json": {"done": 10, "wallets": ["w"] * 40},
+                  "ranking.json": {"generated_at": T0.isoformat(), "eligible": 123, "top": [{
+                      "user": "0xabcdef1234", "trader_score": 88.5, "sharpe": 1.1, "low_dd": -0.06,
+                      "consistency": 0.75, "n_obs": 12, "account_value": 45_000.0,
+                      "behavior_known": True, "behavior_penalty": 0.0}]}}
+    monkeypatch.setattr(dashboard, "read_json", lambda path, default: fake_state.get(path.name, default))
     monkeypatch.setattr(health, "check", lambda: [("OK", "leaderboard: fine"), ("FAIL", "wallets: stale")])
     store.close = lambda: None                      # build() must not close the fixture's connection
     page = dashboard.build(T0 + timedelta(minutes=10))
     assert ">test<" in page and "<svg" in page and "rebalance" in page
     assert 'class="bad">FAIL' in page and "wallets: stale" in page
     assert "congelados" in page and "censo: 10/40" in page
+    assert "Ranking TraderScore" in page and "88.5" in page and "limpio" in page

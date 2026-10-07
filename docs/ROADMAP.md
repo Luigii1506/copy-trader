@@ -32,6 +32,19 @@ Regla: **primero datos → análisis → simulación → automatización → din
 | 2026-10-08 → 10 | **TraderScore v1:** combinar persistencia (rendimiento/consistencia) y comportamiento; backtest sin look-ahead sobre universo + censo; entra como sexta estrategia del paper trading | Fase 4 |
 | ~2026-11-05 | Primer resultado forward a 30 días | Horizonte relevante para copiar |
 
+## MVP (sección 36 del plan): COMPLETO 2026-10-07
+
+| # | Punto | Dónde |
+|---|---|---|
+| 1-5 | Conexión, traders, estadísticas, snapshots, operaciones | collector (leaderboard horario, wallets 4×/día, censo, fills) |
+| 6 | Métricas | `analysis/persistence.py`, `analysis/behavior.py` |
+| 7 | TraderScore | `analysis/score.py` (walk-forward, ADR-003) |
+| 8 | Mostrar ranking | dashboard, sección "Ranking TraderScore" |
+| 9 | Simular copy trading | `papertrade/` (6 estrategias, risk engine, exit rules) |
+| 10 | Medir resultados | dashboard (vs BTC mismo periodo y vs `random`), backtests, forward congelado |
+
+Lo que decide "¿genera ganancias?": el forward congelado hasta el 2026-12-01 (ADR-003). Alertas a celular: pospuestas por decisión del usuario (2026-10-07) hasta validar el MVP.
+
 ## Backlog (2026-10-07)
 
 Lo construido hasta hoy es infraestructura y medición. Lo que falta es inteligencia y control:

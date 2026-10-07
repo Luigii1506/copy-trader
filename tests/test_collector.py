@@ -270,9 +270,15 @@ def test_candidate_funnel_adds_top_scored_wallets(data_dir, monkeypatch):
 
     pool = pl.DataFrame({"user": ["0xs1", "0xs2", "0xh1"],
                          "trader_score": [90.0, 80.0, None],
-                         "sharpe": [0.1, 0.2, 3.5]})
+                         "sharpe": [0.1, 0.2, 3.5], "low_dd": [-0.1, -0.2, -0.3],
+                         "consistency": [0.7, 0.6, 0.5], "n_obs": [10, 10, 10],
+                         "account_value": [50_000.0] * 3, "behavior_known": [True, False, False],
+                         "behavior_penalty": [15.0, 0.0, 0.0]})
     monkeypatch.setattr("papertrade.selection.candidate_signals", lambda now: pool)
     assert sync.candidate_wallets() == ["0xh1", "0xs1", "0xs2"]
+    ranking = json.loads((data_dir / "state" / "ranking.json").read_text())
+    assert ranking["eligible"] == 2 and ranking["top"][0]["user"] == "0xs1"
+    assert ranking["top"][0]["behavior_penalty"] == 15.0
 
     monkeypatch.setattr("papertrade.selection.candidate_signals",
                         lambda now: (_ for _ in ()).throw(RuntimeError("no data")))
