@@ -5,7 +5,7 @@ import pytest
 
 from papertrade import engine as engine_mod
 from papertrade import selection
-from papertrade.book import Book, Market, execute, funding_payments, plan_trades, target_notionals
+from papertrade.book import Book, Market, execute, funding_payments, plan_trades, target_notionals, unreplicable
 from papertrade.config import TAKER_FEE, Strategy
 from papertrade.store import Store
 
@@ -33,6 +33,17 @@ def test_plan_trades_ignores_noise_but_closes_and_flips():
     assert plan_trades(book, {}, m)[0][1] == -10.0                     # trader closed: close exactly
     assert plan_trades(book, {"BTC": -500}, m)[0][1] == pytest.approx(-15.0)  # flip to short
     assert plan_trades(book, {"DOGE": 5}, {"BTC": mkt(100.0), "DOGE": mkt(0.1)}) == [("BTC", -10.0, 0.0)]
+
+
+def test_lot_rounding_and_exchange_minimum():
+    btc = Market(mid=100_000.0, oracle=100_000.0, funding=0.0, sz_decimals=5)
+    book = Book("s", "t", 0.0)
+    [(coin, delta, _)] = plan_trades(book, {"BTC": 1_234.567}, {"BTC": btc})
+    assert delta == 0.01235                                             # 5 lot decimals
+    assert plan_trades(book, {"BTC": 9.0}, {"BTC": btc}) == []          # under the $10 minimum
+    dust = Book("s", "t", 0.0, {"BTC": 0.00005})                        # $5 position the trader closed
+    assert plan_trades(dust, {}, {"BTC": btc}) == [("BTC", -0.00005, 0.0)]
+    assert unreplicable({"BTC": 9.0, "ETH": 500.0}, {"BTC": btc, "ETH": mkt(2_000.0)}) == {"BTC": 9.0}
 
 
 def test_execute_charges_impact_and_fee_and_pnl_is_linear():
@@ -69,7 +80,7 @@ class FakeExchange:
         coins = [c for c in self.prices if (c.split(":")[0] if ":" in c else "") == dex]
         ctxs = [{"midPx": str(self.prices[c]), "oraclePx": str(self.prices[c]), "funding": str(self.funding),
                  "impactPxs": [str(self.prices[c] * 0.999), str(self.prices[c] * 1.001)]} for c in coins]
-        return [{"universe": [{"name": c} for c in coins]}, ctxs]
+        return [{"universe": [{"name": c, "szDecimals": 4} for c in coins]}, ctxs]
 
     def clearinghouse_state(self, user, dex=""):
         held = {c: s for c, s in self.positions.get(user, {}).items()
@@ -104,6 +115,13 @@ def test_engine_opens_books_and_mirrors_positions_on_all_dexs(setup):
     assert books["0xa"].positions["BTC"] * 100 == pytest.approx(10_000, rel=1e-6)
     assert books["0xb"].positions["xyz:MU"] * 50 == pytest.approx(-2_500, rel=1e-6)
     assert 9_980 < equity(store) < 10_000                              # only costs so far
+
+
+def test_book_snapshots_record_trader_equity(setup):
+    engine, ex, store = setup
+    engine.step(T0)
+    rows = store.db.execute("select trader_equity from book_equity").fetchall()
+    assert len(rows) == 2 and all(r[0] == 1_000.0 for r in rows)
 
 
 def test_engine_follows_closes_and_price_moves(setup):

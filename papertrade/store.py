@@ -49,7 +49,7 @@ create table if not exists events (
     ts text not null,
     strategy text not null,
     trader text,
-    kind text not null,                 -- trade | funding | open_book | close_book | rebalance | halt
+    kind text not null,                 -- trade | funding | open_book | close_book | rebalance | halt | unreplicable
     coin text,
     size real,
     price real,
@@ -58,6 +58,14 @@ create table if not exists events (
     detail text                         -- json
 );
 create index if not exists events_ts on events(ts);
+create table if not exists book_equity (
+    ts text not null,
+    book_id integer not null references books(id),
+    equity real not null,
+    gross real not null,
+    trader_equity real,                 -- the copied trader's total account value at the same time
+    primary key (ts, book_id)
+);
 create table if not exists equity (
     ts text not null,
     strategy text not null,
@@ -140,6 +148,11 @@ class Store:
     def snapshot(self, now: datetime, strategy: str, equity: float, cash_pool: float, gross: float, books: int) -> None:
         self.db.execute("insert or replace into equity values (?, ?, ?, ?, ?, ?)",
                         (now.isoformat(), strategy, equity, cash_pool, gross, books))
+
+    def snapshot_book(self, now: datetime, book_id: int, equity: float, gross: float, trader_equity: float | None) -> None:
+        """Per-book curve next to the trader's own: the tracking error of copying is their difference."""
+        self.db.execute("insert or replace into book_equity values (?, ?, ?, ?, ?)",
+                        (now.isoformat(), book_id, equity, gross, trader_equity))
 
     def commit(self) -> None:
         self.db.commit()

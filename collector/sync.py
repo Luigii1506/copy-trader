@@ -19,6 +19,7 @@ import argparse
 import fcntl
 import json
 import logging
+import sqlite3
 import time
 from datetime import datetime, timedelta
 from contextlib import contextmanager
@@ -115,8 +116,21 @@ def _log_version(version: dict[str, str], seen_at: datetime) -> None:
         fh.write(json.dumps({**version, "first_seen": seen_at.isoformat()}) + "\n")
 
 
+def followed_by_papertrade() -> list[str]:
+    """Traders with an open paper-trading book, so their fills are collected too."""
+    db_path = DATA_DIR / "papertrade" / "papertrade.db"
+    if not db_path.exists():
+        return []
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+        return [r[0] for r in db.execute("select distinct trader from books where closed_at is null")]
+
+
 def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
     started = utcnow()
+    followed = followed_by_papertrade()
+    if followed:
+        added = universe.add(followed, "papertrade", started)
+        log.info("wallets: %d traders followed by paper trading, %d new in universe", len(followed), added)
     wallets = sorted(universe.load()["wallets"])[:limit]
     if not wallets:
         log.error("universe is empty; run `python -m collector.sync leaderboard` first")

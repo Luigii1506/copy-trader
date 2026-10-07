@@ -7,6 +7,7 @@ Cohorts (a wallet may belong to several):
 - top_alltime_pnl: largest all-time PnL
 - top_month_roi:   best 30-day ROI (with a minimum account size, to skip dust accounts)
 - random:          random sample of eligible wallets; the control group for persistence tests
+- papertrade:      traders a paper-trading strategy follows (their fills feed the behavior exit rules)
 """
 
 from __future__ import annotations
@@ -37,6 +38,23 @@ def _eligible(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         r for r in rows
         if float(r["accountValue"]) >= MIN_ACCOUNT_VALUE and _window(r, "month")["vlm"] > 0
     ]
+
+
+def add(addresses: list[str], cohort: str, now: datetime) -> int:
+    """Track more wallets under `cohort` (e.g. traders the paper-trading engine follows). Append-only."""
+    universe = load()
+    wallets: dict[str, Any] = universe["wallets"]
+    added = 0
+    for address in addresses:
+        address = address.lower()
+        entry = wallets.get(address)
+        if entry is None:
+            entry = wallets[address] = {"added_at": now.isoformat(), "cohorts": []}
+            added += 1
+        if cohort not in entry["cohorts"]:
+            entry["cohorts"].append(cohort)
+    write_json(UNIVERSE_PATH, universe)
+    return added
 
 
 def load() -> dict[str, Any]:

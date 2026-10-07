@@ -20,7 +20,7 @@ from collector.hyperliquid import HyperliquidClient
 from collector.storage import DATA_DIR, utcnow
 
 from . import selection
-from .book import Book, Market, execute, funding_payments, plan_trades, target_notionals
+from .book import Book, Market, execute, funding_payments, plan_trades, target_notionals, unreplicable
 from .config import (
     DEX_RESCAN,
     EQUITY_REFRESH,
@@ -60,6 +60,7 @@ class Engine:
         self.last_snapshot: datetime | None = None
         self.last_funding_hour: datetime | None = self._last_funding_hour()
         self.candidates: tuple[str, pl.DataFrame] | None = None   # (day, signals)
+        self.unreplicable_seen: dict[int, dict[str, float]] = {}  # book id -> last reported impossible targets
 
     # --- market and trader data ---
 
@@ -76,6 +77,7 @@ class Engine:
                     mid=float(ctx["midPx"]), oracle=float(ctx["oraclePx"]), funding=float(ctx["funding"]),
                     impact_bid=float(impact[0]) if impact[0] else None,
                     impact_ask=float(impact[1]) if impact[1] else None,
+                    sz_decimals=asset.get("szDecimals"),
                 )
         return out
 
@@ -164,6 +166,11 @@ class Engine:
                 self._close_book(s, book_id, book, now, markets, reason=f"trader equity {view.equity:.0f} below minimum")
                 continue
             targets, scale = target_notionals(view.notionals, view.equity, book.equity(markets), s.max_leverage)
+            impossible = unreplicable(targets, markets)
+            if impossible != self.unreplicable_seen.get(book_id):
+                self.unreplicable_seen[book_id] = impossible
+                if impossible:
+                    self.store.event(now, s.name, "unreplicable", book.trader, targets=impossible)
             for coin, delta, target in plan_trades(book, targets, markets):
                 reason = {"trader_notional": view.notionals.get(coin, 0.0), "trader_equity": view.equity,
                           "target_notional": target, "leverage_scale": scale}
@@ -281,7 +288,12 @@ class Engine:
     def _snapshot(self, now: datetime, markets: dict[str, Market]) -> None:
         for s in self.strategies:
             row = self.store.strategy(s.name)
-            books = [b for _, b in self.store.open_books(s.name)]
+            open_books = self.store.open_books(s.name)
+            for book_id, b in open_books:
+                view = self.traders.get(b.trader)
+                self.store.snapshot_book(now, book_id, b.equity(markets), b.gross(markets),
+                                         view.equity if view else None)
+            books = [b for _, b in open_books]
             equity = row["cash_pool"] + sum(b.equity(markets) for b in books)
             gross = sum(b.gross(markets) for b in books)
             self.store.snapshot(now, s.name, equity, row["cash_pool"], gross, len(books))

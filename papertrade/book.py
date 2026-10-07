@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .config import MIN_SLIPPAGE, MIN_TRADE_USD, REBALANCE_BAND, TAKER_FEE
+from .config import MIN_ORDER_USD, MIN_SLIPPAGE, MIN_TRADE_USD, REBALANCE_BAND, TAKER_FEE
 
 
 @dataclass
@@ -21,6 +21,11 @@ class Market:
     funding: float            # hourly rate; longs pay when positive
     impact_bid: float | None = None
     impact_ask: float | None = None
+    sz_decimals: int | None = None   # lot precision from meta; None = no rounding
+
+    def lot(self, size: float) -> float:
+        """Size rounded to the asset's lot precision (docs: sizes are rounded to szDecimals)."""
+        return round(size, self.sz_decimals) if self.sz_decimals is not None else size
 
     def fill_price(self, buying: bool) -> float:
         """Impact price for the side, never better than mid +/- MIN_SLIPPAGE."""
@@ -82,14 +87,33 @@ def plan_trades(book: Book, targets: dict[str, float], markets: dict[str, Market
         current = book.positions.get(coin, 0.0) * market.mid
         target = targets.get(coin, 0.0)
         gap = target - current
-        if abs(gap) < MIN_TRADE_USD:
-            continue
         closing = target == 0 and current != 0
+        if abs(gap) < MIN_TRADE_USD and not closing:
+            continue
         flipping = current * target < 0
         if closing or flipping or abs(gap) > REBALANCE_BAND * max(abs(target), abs(current)):
-            delta = -book.positions.get(coin, 0.0) if closing else gap / market.mid
+            delta = -book.positions.get(coin, 0.0) if closing else market.lot(gap / market.mid)
+            # Exchange rule: orders under $10 are rejected. Closing a residual is still allowed here
+            # (a real close of dust needs a reduce-only order; this is the one optimistic assumption).
+            if delta == 0 or (not closing and abs(delta) * market.mid < MIN_ORDER_USD):
+                continue
             trades.append((coin, delta, target))
     return trades
+
+
+def unreplicable(targets: dict[str, float], markets: dict[str, Market]) -> dict[str, float]:
+    """Targets the exchange's lot size or $10 minimum make impossible to hold: coin -> target notional.
+
+    Small books cannot mirror small slices of a big trader's portfolio; this is where tracking
+    error comes from with little capital, so it is reported rather than silently dropped."""
+    out = {}
+    for coin, target in targets.items():
+        market = markets.get(coin)
+        if market is None or target == 0:
+            continue
+        if abs(target) < MIN_ORDER_USD or market.lot(target / market.mid) == 0:
+            out[coin] = target
+    return out
 
 
 def execute(book: Book, coin: str, size: float, market: Market, reason: dict) -> Fill:

@@ -254,3 +254,11 @@ def test_census_skips_vaults_and_small_volume_and_resumes(data_dir, monkeypatch)
     second = FakePortfolioClient()
     census.run(second)                                          # already complete: nothing refetched
     assert second.seen == []
+
+
+def test_universe_add_followed_traders_is_append_only(data_dir):
+    now = datetime(2026, 10, 7, tzinfo=timezone.utc)
+    assert universe.add(["0xAAA", "0xbbb"], "papertrade", now) == 2
+    assert universe.add(["0xaaa"], "papertrade", now) == 0
+    assert universe.add(["0xaaa"], "random", now) == 0
+    assert universe.load()["wallets"]["0xaaa"]["cohorts"] == ["papertrade", "random"]

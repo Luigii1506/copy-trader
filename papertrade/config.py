@@ -39,6 +39,7 @@ DEX_RESCAN = timedelta(minutes=30)        # look for positions on every HIP-3 de
 SNAPSHOT_INTERVAL = timedelta(minutes=5)
 REBALANCE_BAND = 0.10        # trade only if the change exceeds 10% of the position...
 MIN_TRADE_USD = 10.0         # ...and at least $10
+MIN_ORDER_USD = 10.0         # exchange rule: "Order must have minimum value of $10" (docs, exchange endpoint)
 
 # Selection pool
 MIN_TRADER_EQUITY = 10_000.0           # don't copy accounts smaller than this
