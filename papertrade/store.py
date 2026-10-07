@@ -66,6 +66,15 @@ create table if not exists book_equity (
     trader_equity real,                 -- the copied trader's total account value at the same time
     primary key (ts, book_id)
 );
+create table if not exists flags (
+    id integer primary key,
+    ts text not null,
+    trader text not null,
+    rule text not null,
+    value real,
+    detail text
+);
+create index if not exists flags_trader on flags(trader, ts);
 create table if not exists equity (
     ts text not null,
     strategy text not null,
@@ -148,6 +157,15 @@ class Store:
     def snapshot(self, now: datetime, strategy: str, equity: float, cash_pool: float, gross: float, books: int) -> None:
         self.db.execute("insert or replace into equity values (?, ?, ?, ?, ?, ?)",
                         (now.isoformat(), strategy, equity, cash_pool, gross, books))
+
+    def add_flag(self, now: datetime, trader: str, rule: str, value: float, detail: dict) -> None:
+        self.db.execute("insert into flags(ts, trader, rule, value, detail) values (?, ?, ?, ?, ?)",
+                        (now.isoformat(), trader, rule, value, json.dumps(detail)))
+
+    def flagged(self, since: datetime) -> dict[str, str]:
+        """trader -> latest rule, for flags raised at or after `since`."""
+        rows = self.db.execute("select trader, rule from flags where ts >= ? order by ts", (since.isoformat(),))
+        return {r["trader"]: r["rule"] for r in rows}
 
     def snapshot_book(self, now: datetime, book_id: int, equity: float, gross: float, trader_equity: float | None) -> None:
         """Per-book curve next to the trader's own: the tracking error of copying is their difference."""

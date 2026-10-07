@@ -17,7 +17,7 @@ from .storage import DATA_DIR, read_json, utcnow
 MAX_AGE = {
     "leaderboard": timedelta(hours=3),   # hourly version check
     "wallets": timedelta(hours=10),      # longest gap 18:30 -> 02:30 = 8h
-    "normalize": timedelta(hours=18),    # longest gap 04:15 -> 19:45 = 15.5h
+    "normalize": timedelta(hours=10),    # longest gap 19:40 -> 03:40 = 8h
 }
 # The source must keep publishing: no new leaderboard version stored for this long means it stopped.
 MAX_SNAPSHOT_AGE = timedelta(hours=30)

@@ -46,3 +46,17 @@ MIN_TRADER_EQUITY = 10_000.0           # don't copy accounts smaller than this
 MIN_BOOK_TRADER_EQUITY = 1_000.0       # stop copying a trader whose account falls below this
 MAX_FILLS_PER_DAY = 500                # above this a 60 s poll can't follow them (HFT / market makers)
 LOOKBACK_WEEKS = 12
+
+# Behavior watch (papertrade/watch.py): stop copying when a followed trader's recent behavior
+# crosses a limit. (rule, feature column, comparison, limit). Starting points, to be calibrated.
+WATCH_INTERVAL = timedelta(hours=6)
+WATCH_WINDOW_DAYS = 60
+WATCH_MIN_TRADES = 5                    # fewer closed trades than this: not enough evidence
+FLAG_TTL = timedelta(days=14)           # a flagged trader stays ineligible this long
+EXIT_RULES = [
+    ("liquidated", "liquidations", ">", 0),             # any forced liquidation in the window
+    ("martingale", "martingale_share", ">", 0.6),        # sizes up after losses most of the time
+    ("leverage", "p95_leverage", ">", 15.0),             # routinely near the exchange maximum
+    ("leverage_escalation", "change_leverage", ">", 2.0),  # recent leverage doubled vs. before
+    ("size_escalation", "change_size", ">", 3.0),        # recent trades 3x bigger than before
+]

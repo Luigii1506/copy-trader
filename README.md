@@ -26,7 +26,7 @@ Corre en la Mac Studio (`admin@admins-mac-studio` por Tailscale), repo en `~/cop
 |---|---|---|
 | `leaderboard` | cada hora | revisa si hay versión nueva del leaderboard; guarda máx. 1 cada 6 h (+ vaults) y refresca universo |
 | `wallets` | 02:30 08:30 14:30 18:30 | estado, portfolio y fills nuevos |
-| `normalize` | 04:15 19:45 | crudo → Parquet |
+| `normalize` | 03:40 09:40 15:40 19:40 | crudo → Parquet (alimenta la vigilancia de comportamiento) |
 | `census` | manual | curvas de capital de ~43k traders del leaderboard (una vez, reanudable) |
 | `papertrade` | siempre (KeepAlive) | motor de paper trading ([ADR-002](docs/decisions/ADR-002-paper-trading.md)) |
 

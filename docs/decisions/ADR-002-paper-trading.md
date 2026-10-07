@@ -34,6 +34,20 @@ Cada estrategia empieza con $10,000 virtuales repartidos en 10 traders y re-sele
 - **Funding cada hora:** `tamaño × precio oráculo × tasa` (fórmula oficial).
 - **Latencia:** sondeo cada 60 s. Los traders de alta frecuencia no se pueden copiar así y se excluyen del pool (más de 500 fills por día).
 
+## Cuándo dejar de copiar (reglas de salida)
+
+Cada 6 h el motor evalúa a los traders seguidos con las señales de comportamiento (`analysis/behavior.py`) sobre sus últimos 60 días. Un trader marcado se cierra y no se vuelve a elegir durante 14 días. Reglas iniciales (`papertrade/config.py`), **sin calibrar todavía**; cada disparo queda en la tabla `flags` para calibrarlas después:
+
+| Regla | Condición |
+|---|---|
+| `liquidated` | alguna liquidación forzada en la ventana |
+| `martingale` | agranda el tamaño tras perder en > 60 % de los casos |
+| `leverage` | p95 del leverage > 15x |
+| `leverage_escalation` | leverage reciente > 2× el anterior |
+| `size_escalation` | tamaño reciente > 3× el anterior |
+
+Requiere ≥ 5 operaciones cerradas en la ventana. Para que haya fills de los traders seguidos, el collector los agrega al universo (cohorte `papertrade`).
+
 ## Riesgo y control
 
 - **Kill switch por estrategia:** si cae 30 % desde su máximo, cierra todo y se detiene. Es más laxo que el 10 % del plan, a propósito: aquí queremos medir cada regla de selección, no detenerla en la primera racha. El risk engine de producción usará los límites del plan.

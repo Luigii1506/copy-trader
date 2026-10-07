@@ -5,7 +5,7 @@
 # Schedule (local time), chosen to stay clear of brain-ops at 06:00 and 22:00:
 #   leaderboard  every hour       checks for a new leaderboard version; stores at most one per 6h
 #   wallets      02:30 08:30 14:30 18:30
-#   normalize    04:15 19:45      raw JSON -> Parquet
+#   normalize    4x/day, ~70 min after each wallets run   raw JSON -> Parquet (feeds the behavior watch)
 #   census       manual           one-off equity-history census (launchctl kickstart ...census)
 #   papertrade   always           paper-trading engine (KeepAlive; see docs/decisions/ADR-002)
 # Jobs run at low CPU/IO priority under caffeinate so the Mac doesn't idle-sleep mid-run.
@@ -86,7 +86,7 @@ EOF
 
 install_job leaderboard every=3600
 install_job wallets 02:30 08:30 14:30 18:30
-install_job normalize 04:15 19:45
+install_job normalize 03:40 09:40 15:40 19:40
 install_job census manual
 install_job papertrade always
 

@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 
 from papertrade import engine as engine_mod
-from papertrade import selection
+from papertrade import selection, watch
 from papertrade.book import Book, Market, execute, funding_payments, plan_trades, target_notionals, unreplicable
 from papertrade.config import TAKER_FEE, Strategy
 from papertrade.store import Store
@@ -94,6 +94,7 @@ class FakeExchange:
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(engine_mod, "KILL_FILE", tmp_path / "KILL")
+    monkeypatch.setattr(watch, "run", lambda traders, now: [])
     candidates = pl.DataFrame({"user": ["0xa", "0xb", "0xc"], "ret": [0.5, 0.4, 0.1]})
     monkeypatch.setattr(selection, "candidate_signals", lambda now: candidates)
     exchange = FakeExchange()
@@ -177,3 +178,31 @@ def test_rebalance_moves_capital_from_dropped_traders(setup, monkeypatch):
     assert set(books) == {"0xa", "0xc"}
     events = [r[0] for r in store.db.execute("select kind from events where ts = ?", (later.isoformat(),))]
     assert "close_book" in events and "open_book" in events
+
+
+def test_evaluate_applies_exit_rules_only_with_enough_trades():
+    feats = pl.DataFrame({
+        "user": ["mart", "quiet", "liq"],
+        "n_trades": [20, 2, 8],
+        "martingale_share": [0.9, 0.9, 0.1],
+        "liquidations": [0, 0, 1],
+        "p95_leverage": [3.0, 3.0, 3.0],
+        "change_leverage": [1.0, 1.0, None],
+        "change_size": [1.0, 1.0, 1.0],
+    })
+    hits = {(h["trader"], h["rule"]) for h in watch.evaluate(feats)}
+    assert hits == {("mart", "martingale"), ("liq", "liquidated")}
+
+
+def test_flagged_trader_is_closed_and_not_reselected(setup, monkeypatch):
+    engine, ex, store = setup
+    engine.step(T0)
+    assert {b.trader for _, b in store.open_books("test")} == {"0xa", "0xb"}
+    monkeypatch.setattr(watch, "run", lambda traders, now: [
+        {"trader": "0xa", "rule": "liquidated", "column": "liquidations", "value": 1.0, "limit": 0}])
+    engine.step(T0 + timedelta(hours=7))                 # watch interval elapsed
+    assert {b.trader for _, b in store.open_books("test")} == {"0xb"}
+    reasons = [r[0] for r in store.db.execute("select json_extract(detail, '$.reason') from events where kind='close_book'")]
+    assert reasons == ["behavior: liquidated"]
+    engine.step(T0 + timedelta(days=29))                 # rebalance: 0xa still ranks first but is flagged
+    assert "0xa" not in {b.trader for _, b in store.open_books("test")}

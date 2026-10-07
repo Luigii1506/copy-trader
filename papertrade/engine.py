@@ -19,11 +19,13 @@ import polars as pl
 from collector.hyperliquid import HyperliquidClient
 from collector.storage import DATA_DIR, utcnow
 
-from . import selection
+from . import selection, watch
 from .book import Book, Market, execute, funding_payments, plan_trades, target_notionals, unreplicable
 from .config import (
     DEX_RESCAN,
     EQUITY_REFRESH,
+    FLAG_TTL,
+    WATCH_INTERVAL,
     MIN_BOOK_TRADER_EQUITY,
     POLL_INTERVAL,
     SNAPSHOT_INTERVAL,
@@ -61,6 +63,7 @@ class Engine:
         self.last_funding_hour: datetime | None = self._last_funding_hour()
         self.candidates: tuple[str, pl.DataFrame] | None = None   # (day, signals)
         self.unreplicable_seen: dict[int, dict[str, float]] = {}  # book id -> last reported impossible targets
+        self.last_watch: datetime | None = None
 
     # --- market and trader data ---
 
@@ -145,6 +148,9 @@ class Engine:
             view.notionals = {c: size * markets[c].mid for c, size in view.sizes.items() if c in markets}
 
         self._funding(now, markets)
+        if self.last_watch is None or now - self.last_watch >= WATCH_INTERVAL:
+            self._watch(followed, now, markets)
+            self.last_watch = now
         for s in due:
             self.rebalance(s, now, markets)
         for s in self.strategies:
@@ -154,6 +160,25 @@ class Engine:
             self._snapshot(now, markets)
             self.last_snapshot = now
         self.store.commit()
+
+    # --- behavior watch ---
+
+    def _watch(self, followed: set[str], now: datetime, markets: dict[str, Market]) -> None:
+        try:
+            hits = watch.run(followed, now)
+        except Exception:
+            log.exception("behavior watch failed; books unchanged")
+            return
+        for hit in hits:
+            self.store.add_flag(now, hit["trader"], hit["rule"], hit["value"], hit)
+            log.warning("flag %s: %s (%s=%.3g > %s)", hit["trader"], hit["rule"], hit["column"], hit["value"], hit["limit"])
+        flagged = self.store.flagged(now - FLAG_TTL)
+        for s in self.strategies:
+            if self.store.strategy(s.name)["status"] != "active":
+                continue
+            for book_id, book in self.store.open_books(s.name):
+                if book.trader in flagged:
+                    self._close_book(s, book_id, book, now, markets, reason=f"behavior: {flagged[book.trader]}")
 
     # --- copying ---
 
@@ -216,7 +241,8 @@ class Engine:
         return last is None or now - datetime.fromisoformat(last) >= timedelta(days=s.rebalance_days)
 
     def rebalance(self, s: Strategy, now: datetime, markets: dict[str, Market]) -> None:
-        chosen = self._selection(s, now)
+        flagged = self.store.flagged(now - FLAG_TTL)
+        chosen = [(t, v) for t, v in self._selection(s, now) if t not in flagged]
         if not chosen:
             log.warning("%s: no eligible traders; rebalance postponed", s.name)
             return
