@@ -107,6 +107,9 @@ def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
         return
 
     cursors: dict[str, int] = read_json(FILLS_CURSOR_PATH, {})
+    # Positions are per perp dex: HIP-3 dexs (equity/index perps etc.) are invisible from the main one.
+    # Fills and portfolio already cover every dex.
+    dexs = client.perp_dexs()
     writers = {name: RawWriter(name, started) for name in ("clearinghouse_state", "portfolio", "fills")}
     failures = 0
     gaps: list[str] = []
@@ -114,10 +117,11 @@ def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
 
     for i, user in enumerate(wallets, 1):
         try:
-            fetched = utcnow()
-            state = client.clearinghouse_state(user)
-            writers["clearinghouse_state"].write(
-                envelope("clearinghouse_state", {"type": "clearinghouseState", "user": user}, state, fetched))
+            for dex in dexs:
+                fetched = utcnow()
+                state = client.clearinghouse_state(user, dex)
+                request = {"type": "clearinghouseState", "user": user, "dex": dex}
+                writers["clearinghouse_state"].write(envelope("clearinghouse_state", request, state, fetched))
 
             fetched = utcnow()
             portfolio = client.portfolio(user)

@@ -5,8 +5,8 @@ One Parquet file per raw file:
 
 Tables:
     leaderboard        one row per wallet per leaderboard snapshot (the persistence-study universe)
-    account_snapshots  one row per wallet per clearinghouseState call
-    positions          one row per open position per clearinghouseState call
+    account_snapshots  one row per wallet per perp dex per clearinghouseState call
+    positions          one row per open position (any perp dex, incl. HIP-3) per clearinghouseState call
     equity_history     portfolio() account value / PnL series per period (repeats across runs; dedup when querying)
     vaults             one row per vault per vaults snapshot (Hyperliquid's native copy trading)
     equity_census      equity_history for every leaderboard trader (collector/census.py)
@@ -87,6 +87,7 @@ def account_rows(record: dict[str, Any]) -> Rows:
     return [{
         "snapshot_at": record["fetched_at"],
         "user": record["request"]["user"],
+        "dex": record["request"].get("dex", ""),  # "" = main perp dex; others are HIP-3
         "account_value": _f(summary["accountValue"]),
         "total_notional": _f(summary["totalNtlPos"]),
         "total_margin_used": _f(summary["totalMarginUsed"]),
@@ -102,6 +103,7 @@ def position_rows(record: dict[str, Any]) -> Rows:
         rows.append({
             "snapshot_at": record["fetched_at"],
             "user": record["request"]["user"],
+            "dex": record["request"].get("dex", ""),
             "coin": pos["coin"],
             "size": _f(pos["szi"]),  # signed: negative = short
             "entry_px": _f(pos.get("entryPx")),

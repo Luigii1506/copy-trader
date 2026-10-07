@@ -91,7 +91,9 @@ def test_clearinghouse_rows():
             "positionValue": "1000", "unrealizedPnl": "-7", "liquidationPx": None, "marginUsed": "50",
             "cumFunding": {"sinceOpen": "-1.5"}}}]}}
     [account] = normalize.account_rows(record)
-    assert account["account_value"] == 100 and account["open_positions"] == 1
+    assert account["account_value"] == 100 and account["open_positions"] == 1 and account["dex"] == ""
+    record["request"]["dex"] = "xyz"
+    assert normalize.position_rows(record)[0]["dex"] == "xyz"
     [pos] = normalize.position_rows(record)
     assert pos["size"] == -0.5 and pos["leverage"] == 20 and pos["liquidation_px"] is None
     assert pos["funding_since_open"] == -1.5

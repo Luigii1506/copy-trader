@@ -124,8 +124,16 @@ class HyperliquidClient:
     def vaults(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
         return self._stats(VAULTS_URL)
 
-    def clearinghouse_state(self, user: str) -> dict[str, Any]:
-        return self.info({"type": "clearinghouseState", "user": user})
+    def clearinghouse_state(self, user: str, dex: str = "") -> dict[str, Any]:
+        """dex "" is the main perp dex; others are HIP-3 dexs (e.g. "xyz": equity and index perps)."""
+        body = {"type": "clearinghouseState", "user": user}
+        if dex:
+            body["dex"] = dex
+        return self.info(body)
+
+    def perp_dexs(self) -> list[str]:
+        """Names of all perp dexs, "" for the main one first."""
+        return [d["name"] if d else "" for d in self.info({"type": "perpDexs"})]
 
     def portfolio(self, user: str) -> list[Any]:
         return self.info({"type": "portfolio", "user": user})
