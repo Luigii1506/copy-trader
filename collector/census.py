@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 CENSUS_PATH = DATA_DIR / "state" / "census.json"
 MIN_ALLTIME_VOLUME = 10_000.0
-SAVE_EVERY = 50
+SAVE_EVERY = 10
 # A new raw file every N wallets: finished chunks can be normalized and analyzed while the census runs.
 CHUNK = 1_000
 
