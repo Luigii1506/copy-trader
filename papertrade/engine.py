@@ -19,9 +19,10 @@ import polars as pl
 from collector.hyperliquid import HyperliquidClient
 from collector.storage import DATA_DIR, utcnow
 
-from . import selection, watch
+from . import risk, selection, watch
 from .book import Book, Market, execute, funding_payments, plan_trades, target_notionals, unreplicable
 from .config import (
+    DAILY_LOSS_PAUSE,
     DEX_RESCAN,
     EQUITY_REFRESH,
     FLAG_TTL,
@@ -64,6 +65,7 @@ class Engine:
         self.candidates: tuple[str, pl.DataFrame] | None = None   # (day, signals)
         self.unreplicable_seen: dict[int, dict[str, float]] = {}  # book id -> last reported impossible targets
         self.last_watch: datetime | None = None
+        self.pause_logged: set[tuple[str, str]] = set()           # (strategy, UTC day) already logged
 
     # --- market and trader data ---
 
@@ -185,8 +187,25 @@ class Engine:
 
     # --- copying ---
 
+    def _paused(self, s: Strategy, now: datetime, equity_now: float) -> bool:
+        """Daily loss limit: after losing DAILY_LOSS_PAUSE in a UTC day, add no exposure until tomorrow."""
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        base = self.store.day_start_equity(s.name, midnight.isoformat())
+        if base is None or equity_now >= base * (1 - DAILY_LOSS_PAUSE):
+            return False
+        key = (s.name, f"{now:%Y-%m-%d}")
+        if key not in self.pause_logged:
+            self.pause_logged.add(key)
+            self.store.event(now, s.name, "risk_pause", day_start_equity=base, equity=equity_now)
+            log.warning("%s: daily loss %.1f%% exceeds %.0f%%; no new exposure until tomorrow",
+                        s.name, (1 - equity_now / base) * 100, DAILY_LOSS_PAUSE * 100)
+        return True
+
     def _copy(self, s: Strategy, now: datetime, markets: dict[str, Market]) -> None:
-        for book_id, book in self.store.open_books(s.name):
+        books = self.store.open_books(s.name)
+        equity_now = self.store.strategy(s.name)["cash_pool"] + sum(b.equity(markets) for _, b in books)
+        paused = self._paused(s, now, equity_now)
+        for book_id, book in books:
             view = self.traders.get(book.trader)
             if view is None or not view.ok:
                 continue
@@ -200,6 +219,9 @@ class Engine:
                 if impossible:
                     self.store.event(now, s.name, "unreplicable", book.trader, targets=impossible)
             for coin, delta, target in plan_trades(book, targets, markets):
+                current = book.positions.get(coin, 0.0)
+                if paused and abs(current + delta) > abs(current):
+                    continue  # closes and reductions always go through; growth waits for tomorrow
                 reason = {"trader_notional": view.notionals.get(coin, 0.0), "trader_equity": view.equity,
                           "target_notional": target, "leverage_scale": scale}
                 fill = execute(book, coin, delta, markets[coin], reason)
@@ -254,12 +276,18 @@ class Engine:
         for book_id, book in books:
             if book.trader not in chosen_set:
                 self._close_book(s, book_id, book, now, markets, reason="not selected at rebalance")
+        weights, correlated = risk.weights_for([t for t, _ in chosen])
         books = self.store.open_books(s.name)
         pool = self.store.strategy(s.name)["cash_pool"]
         total = pool + sum(b.equity(markets) for _, b in books)
-        share = total / len(chosen)
+        # Books that failed to close (unpriceable position) keep their equity; it is not reallocated.
+        leftover = sum(b.equity(markets) for _, b in books if b.trader not in weights)
+        allocatable = total - leftover
         for book_id, book in books:  # continuing traders: resize by moving cash
-            diff = share - book.equity(markets)
+            weight = weights.get(book.trader)
+            if weight is None:
+                continue
+            diff = allocatable * weight - book.equity(markets)
             book.cash += diff
             pool -= diff
             self.store.save_book(book_id, book)
@@ -267,12 +295,17 @@ class Engine:
         for rank, (trader, value) in enumerate(chosen, 1):
             if trader in existing:
                 continue
-            self.store.create_book(s.name, trader, share, now, {"signal": s.signal, "value": value, "rank": rank})
-            pool -= share
-            self.store.event(now, s.name, "open_book", trader, cash_delta=share, signal=s.signal, value=value, rank=rank)
+            cash = allocatable * weights[trader]
+            self.store.create_book(s.name, trader, cash, now, {"signal": s.signal, "value": value, "rank": rank,
+                                                               "weight": weights[trader]})
+            pool -= cash
+            self.store.event(now, s.name, "open_book", trader, cash_delta=cash, signal=s.signal, value=value,
+                             rank=rank, weight=weights[trader])
         self.store.update_strategy(s.name, cash_pool=pool, last_rebalance=now.isoformat())
-        self.store.event(now, s.name, "rebalance", traders=[t for t, _ in chosen], equity=total)
-        log.info("%s: rebalanced into %d traders, equity %.2f", s.name, len(chosen), total)
+        self.store.event(now, s.name, "rebalance", traders=[t for t, _ in chosen], equity=total,
+                         weights={u: round(w, 4) for u, w in weights.items()}, correlated=correlated)
+        log.info("%s: rebalanced into %d traders, equity %.2f, cash %.0f%%, %d correlated groups",
+                 s.name, len(chosen), total, max(0.0, 1 - sum(weights.values())) * 100, len(correlated))
 
     def halt(self, s: Strategy, now: datetime, reason: str, markets: dict[str, Market] | None = None) -> None:
         books = self.store.open_books(s.name)

@@ -112,9 +112,10 @@ def test_engine_opens_books_and_mirrors_positions_on_all_dexs(setup):
     engine.step(T0)
     books = {b.trader: b for _, b in store.open_books("test")}
     assert set(books) == {"0xa", "0xb"}
-    # 0xa: 2x long BTC on $1k equity -> 2x of the $5k book; 0xb: 0.5x short MU on an HIP-3 dex.
-    assert books["0xa"].positions["BTC"] * 100 == pytest.approx(10_000, rel=1e-6)
-    assert books["0xb"].positions["xyz:MU"] * 50 == pytest.approx(-2_500, rel=1e-6)
+    # 30% cap per trader (plan): $3,000 books, 40% cash.
+    # 0xa: 2x long BTC on $1k equity -> 2x of the $3k book; 0xb: 0.5x short MU on an HIP-3 dex.
+    assert books["0xa"].positions["BTC"] * 100 == pytest.approx(6_000, rel=1e-6)
+    assert books["0xb"].positions["xyz:MU"] * 50 == pytest.approx(-1_500, rel=1e-6)
     assert 9_980 < equity(store) < 10_000                              # only costs so far
 
 
@@ -133,7 +134,7 @@ def test_engine_follows_closes_and_price_moves(setup):
     engine.step(T0 + timedelta(minutes=6))
     books = {b.trader: b for _, b in store.open_books("test")}
     assert books["0xa"].positions == {}
-    assert books["0xa"].cash > 5_900                                   # +$1,000 on the 100 BTC... minus costs
+    assert books["0xa"].cash > 3_500                                   # +$600 on the 60 BTC... minus costs
 
 
 def test_funding_charged_once_per_hour(setup):
@@ -146,7 +147,7 @@ def test_funding_charged_once_per_hour(setup):
     rows = store.db.execute("select coin, cash_delta from events where kind='funding'").fetchall()
     assert {r[0] for r in rows} == {"BTC", "xyz:MU"}
     btc = [r[1] for r in rows if r[0] == "BTC"][0]
-    assert btc == pytest.approx(-100 * 100 * 0.001, rel=1e-3)           # long pays
+    assert btc == pytest.approx(-60 * 100 * 0.001, rel=1e-3)            # long pays
 
 
 def test_kill_file_closes_everything(setup, tmp_path):
@@ -218,3 +219,30 @@ def test_flagged_trader_is_closed_and_not_reselected(setup, monkeypatch):
     assert reasons == ["behavior: liquidated"]
     engine.step(T0 + timedelta(days=29))                 # rebalance: 0xa still ranks first but is flagged
     assert "0xa" not in {b.trader for _, b in store.open_books("test")}
+
+
+def test_rebalance_applies_risk_weights_and_keeps_cash(setup, monkeypatch):
+    engine, ex, store = setup
+    monkeypatch.setattr(engine_mod.risk, "weights_for",
+                        lambda users: ({u: 0.3 for u in users}, [sorted(users)]))
+    engine.step(T0)
+    assert store.strategy("test")["cash_pool"] == pytest.approx(4_000.0)
+    detail = store.db.execute("select detail from events where kind='rebalance'").fetchone()[0]
+    assert '"correlated"' in detail and '"weights"' in detail
+
+
+def test_daily_loss_pauses_new_exposure_but_allows_reductions(setup):
+    engine, ex, store = setup
+    engine.step(T0)
+    ex.prices["BTC"] = 90.0                                 # book 0xa loses ~$600 of $10k: > 5% day loss
+    engine.step(T0 + timedelta(minutes=6))
+    assert store.db.execute("select count(*) from events where kind='risk_pause'").fetchone()[0] == 1
+    size_frozen = store.open_books("test")[0]
+    frozen = {b.trader: dict(b.positions) for _, b in store.open_books("test")}
+    ex.positions["0xa"] = {"BTC": 60.0}                     # trader triples up; we must not follow today
+    engine.step(T0 + timedelta(minutes=12))
+    books = {b.trader: b for _, b in store.open_books("test")}
+    assert books["0xa"].positions["BTC"] <= frozen["0xa"]["BTC"] + 1e-9
+    ex.positions["0xa"] = {}                                # trader closes: reduction goes through
+    engine.step(T0 + timedelta(minutes=18))
+    assert store.open_books("test")[0][1].positions.get("BTC") is None or         {b.trader: b for _, b in store.open_books("test")}["0xa"].positions == {}

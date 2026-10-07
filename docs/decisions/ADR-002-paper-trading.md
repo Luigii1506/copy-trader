@@ -50,6 +50,8 @@ Requiere ≥ 5 operaciones cerradas en la ventana. Para que haya fills de los tr
 
 ## Riesgo y control
 
+- **Allocation con topes (secciones 27-28 del plan):** pesos base iguales con máximo 30 % por trader y 50 % por **grupo correlacionado** (pearson ≥ 0.7 entre sus PnL diarios del último mes, con ≥ 12 días en común). Lo que los topes recortan se queda en cash, a propósito: con pocos elegibles o muy correlacionados, la respuesta correcta es cash, no concentrarse más. Dato real (2026-10-07): 21 de 33 traders seguidos eran un solo grupo. Allocation proporcional al score llegará con TraderScore.
+- **Pausa por pérdida diaria:** si una estrategia pierde > 5 % en el día UTC, deja de aumentar exposición hasta el día siguiente (cerrar y reducir siempre se permite). El plan pide 2 %; se usa 5 % mientras medimos las reglas de selección, y cada pausa queda registrada (`risk_pause`).
 - **Kill switch por estrategia:** si cae 30 % desde su máximo, cierra todo y se detiene. Es más laxo que el 10 % del plan, a propósito: aquí queremos medir cada regla de selección, no detenerla en la primera racha. El risk engine de producción usará los límites del plan.
 - **Kill switch global:** `copy-trader papertrade-halt` cierra todo.
 - **Observabilidad:** cada operación queda registrada con su motivo (exposición del trader, objetivo, precio y costos) en SQLite (sección 30 del plan).

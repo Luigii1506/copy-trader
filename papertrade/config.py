@@ -62,3 +62,11 @@ EXIT_RULES = [
     ("leverage_escalation", "change_leverage", ">", 2.0, 10),  # recent leverage doubled vs. before
     ("size_escalation", "change_size", ">", 3.0, 10),       # recent trades 3x bigger (relative to equity)
 ]
+
+# Portfolio risk (proyect.md section 28; applied in papertrade/risk.py and the engine)
+MAX_TRADER_ALLOCATION = 0.30     # plan's cap per trader; excess stays in cash
+MAX_CORRELATED_EXPOSURE = 0.50   # plan's cap for a group of traders that move together
+CORRELATION_THRESHOLD = 0.7      # pearson on daily PnL returns to count as "the same bet"
+CORRELATION_MIN_OVERLAP = 12     # days of common history before trusting a correlation
+DAILY_LOSS_PAUSE = 0.05          # stop adding exposure for the rest of the UTC day after this loss
+                                 # (plan says 2%; looser while we measure selection rules, logged)

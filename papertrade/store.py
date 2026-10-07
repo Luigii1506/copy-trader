@@ -49,7 +49,7 @@ create table if not exists events (
     ts text not null,
     strategy text not null,
     trader text,
-    kind text not null,                 -- trade | funding | open_book | close_book | rebalance | halt | unreplicable
+    kind text not null,                 -- trade | funding | open_book | close_book | rebalance | halt | unreplicable | risk_pause
     coin text,
     size real,
     price real,
@@ -153,6 +153,15 @@ class Store:
             "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (now.isoformat(), strategy, trader, kind, coin, size, price, fee, cash_delta,
              json.dumps(detail) if detail else None))
+
+    def day_start_equity(self, strategy: str, midnight_iso: str) -> float | None:
+        """Equity at the UTC day boundary: the last snapshot at or before midnight, else the day's first."""
+        row = self.db.execute("select equity from equity where strategy = ? and ts <= ? order by ts desc limit 1",
+                              (strategy, midnight_iso)).fetchone()
+        if row is None:
+            row = self.db.execute("select equity from equity where strategy = ? and ts > ? order by ts limit 1",
+                                  (strategy, midnight_iso)).fetchone()
+        return row["equity"] if row else None
 
     def snapshot(self, now: datetime, strategy: str, equity: float, cash_pool: float, gross: float, books: int) -> None:
         self.db.execute("insert or replace into equity values (?, ?, ?, ?, ?, ?)",

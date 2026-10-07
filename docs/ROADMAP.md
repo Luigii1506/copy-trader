@@ -40,7 +40,7 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 1. TraderScore v1: rendimiento + consistencia + comportamiento; con Deflated Sharpe y mínimo de operaciones.
 2. ~~Backtest de copy trading~~ hecho; falta correrlo con el censo completo y por cohortes (solo censo vs universo).
 3. ~~Reglas de salida por comportamiento~~ hechas (`papertrade/watch.py`, ADR-002); umbrales por calibrar con la tabla `flags`.
-4. Risk engine y portafolio (secciones 27-28): correlación entre traders, exposición correlacionada, drawdown de portafolio, allocation por score.
+4. ~~Risk engine y portafolio~~ hecho (`papertrade/risk.py`, ADR-002): grupos correlacionados (21 de 33 seguidos eran uno solo), topes 30 %/trader y 50 %/grupo, pausa por pérdida diaria. Falta: allocation por score (con TraderScore).
 5. ~~Realismo del simulador~~ hecho: lotes por `szDecimals`, mínimo de $10 por orden, objetivos no replicables registrados.
 6. Alertas al celular (Telegram / ntfy).
 7. Dashboard mínimo (sección 31).
