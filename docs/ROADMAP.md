@@ -67,7 +67,11 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 - ~~CI en GitHub Actions~~ hecho.
 - Calibrar los umbrales de las reglas de salida con los disparos registrados.
 
-## Línea 2 (después del TraderScore): acumulación inteligente
+## Línea 2: acumulación inteligente — RESPONDIDA 2026-10-07
+
+**Resultado:** con 480 monedas (deslistadas incluidas), 2021-02 → 2026-09, ninguna regla de selección de altcoins supera a acumular BTC; todas pierden dinero (momentum −8.8 %/año, comprar el dip −1.1 %/año, BTC +8.9 %/año). **Decisión: no construir un selector de altcoins; acumulación = compras periódicas de BTC (quizá ETH).** Detalle: [research/2026-10-07-accumulation.md](research/2026-10-07-accumulation.md). El texto siguiente es el plan original, conservado como registro.
+
+### Plan original
 
 Pedido el 2026-10-07: un ranking para **acumular** cripto (y quizá acciones), sin predecir el momento. Misma disciplina que con los traders: reglas, backtest sin look-ahead, y comparar contra acumular BTC y contra el azar.
 
