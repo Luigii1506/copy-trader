@@ -51,12 +51,14 @@ LOOKBACK_WEEKS = 12
 # crosses a limit. (rule, feature column, comparison, limit). Starting points, to be calibrated.
 WATCH_INTERVAL = timedelta(hours=6)
 WATCH_WINDOW_DAYS = 60
-WATCH_MIN_TRADES = 5                    # fewer closed trades than this: not enough evidence
 FLAG_TTL = timedelta(days=14)           # a flagged trader stays ineligible this long
+# (rule, feature column, comparison, limit, min closed trades). Per-fill measures (liquidations,
+# leverage) need little evidence; ratios of recent-vs-prior behavior need enough trades on both
+# sides or they are noise. Hits below the minimum are logged for calibration but not acted on.
 EXIT_RULES = [
-    ("liquidated", "liquidations", ">", 0),             # any forced liquidation in the window
-    ("martingale", "martingale_share", ">", 0.6),        # sizes up after losses most of the time
-    ("leverage", "p95_leverage", ">", 15.0),             # routinely near the exchange maximum
-    ("leverage_escalation", "change_leverage", ">", 2.0),  # recent leverage doubled vs. before
-    ("size_escalation", "change_size", ">", 3.0),        # recent trades 3x bigger than before
+    ("liquidated", "liquidations", ">", 0, 1),              # any forced liquidation in the window
+    ("leverage", "p95_leverage", ">", 15.0, 1),             # routinely near the exchange maximum
+    ("martingale", "martingale_share", ">", 0.6, 12),       # sizes up after losses most of the time
+    ("leverage_escalation", "change_leverage", ">", 2.0, 10),  # recent leverage doubled vs. before
+    ("size_escalation", "change_size", ">", 3.0, 10),       # recent trades 3x bigger (relative to equity)
 ]

@@ -163,8 +163,10 @@ class Store:
                         (now.isoformat(), trader, rule, value, json.dumps(detail)))
 
     def flagged(self, since: datetime) -> dict[str, str]:
-        """trader -> latest rule, for flags raised at or after `since`."""
-        rows = self.db.execute("select trader, rule from flags where ts >= ? order by ts", (since.isoformat(),))
+        """trader -> latest actionable rule, for flags raised at or after `since`.
+        Rules prefixed `watch:` are observations below the evidence threshold and do not block."""
+        rows = self.db.execute("select trader, rule from flags where ts >= ? and rule not like 'watch:%' order by ts",
+                               (since.isoformat(),))
         return {r["trader"]: r["rule"] for r in rows}
 
     def snapshot_book(self, now: datetime, book_id: int, equity: float, gross: float, trader_equity: float | None) -> None:

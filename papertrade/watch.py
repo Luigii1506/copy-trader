@@ -16,7 +16,7 @@ import polars as pl
 
 from analysis.behavior import behavior_features
 
-from .config import EXIT_RULES, WATCH_MIN_TRADES, WATCH_WINDOW_DAYS
+from .config import EXIT_RULES, WATCH_WINDOW_DAYS
 from .selection import _read
 
 
@@ -30,18 +30,19 @@ def load_inputs(traders: set[str]) -> tuple[pl.DataFrame | None, pl.DataFrame | 
 
 
 def evaluate(features: pl.DataFrame) -> list[dict]:
-    """Apply EXIT_RULES to a behavior-features table. Returns one dict per (trader, rule) hit."""
+    """Apply EXIT_RULES to a behavior-features table. One dict per (trader, rule) hit;
+    `actionable` is False when the trader has fewer closed trades than the rule requires."""
     flags = []
     for row in features.to_dicts():
-        if (row.get("n_trades") or 0) < WATCH_MIN_TRADES:
-            continue  # too little evidence to judge
-        for rule, column, op, limit in EXIT_RULES:
+        n_trades = row.get("n_trades") or 0
+        for rule, column, op, limit, min_trades in EXIT_RULES:
             value = row.get(column)
             if value is None:
                 continue
             hit = value > limit if op == ">" else value < limit
             if hit:
-                flags.append({"trader": row["user"], "rule": rule, "column": column, "value": float(value), "limit": limit})
+                flags.append({"trader": row["user"], "rule": rule, "column": column, "value": float(value),
+                              "limit": limit, "n_trades": int(n_trades), "actionable": n_trades >= min_trades})
     return flags
 
 

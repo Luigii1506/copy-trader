@@ -170,8 +170,11 @@ class Engine:
             log.exception("behavior watch failed; books unchanged")
             return
         for hit in hits:
-            self.store.add_flag(now, hit["trader"], hit["rule"], hit["value"], hit)
-            log.warning("flag %s: %s (%s=%.3g > %s)", hit["trader"], hit["rule"], hit["column"], hit["value"], hit["limit"])
+            # Every hit is logged for calibration; only hits with enough trades block a trader.
+            self.store.add_flag(now, hit["trader"], hit["rule"] if hit["actionable"] else f"watch:{hit['rule']}",
+                                hit["value"], hit)
+            log.warning("%s %s: %s (%s=%.3g > %s, %d trades)", "flag" if hit["actionable"] else "watch",
+                        hit["trader"], hit["rule"], hit["column"], hit["value"], hit["limit"], hit["n_trades"])
         flagged = self.store.flagged(now - FLAG_TTL)
         for s in self.strategies:
             if self.store.strategy(s.name)["status"] != "active":
