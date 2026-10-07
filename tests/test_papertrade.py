@@ -246,3 +246,21 @@ def test_daily_loss_pauses_new_exposure_but_allows_reductions(setup):
     ex.positions["0xa"] = {}                                # trader closes: reduction goes through
     engine.step(T0 + timedelta(minutes=18))
     assert store.open_books("test")[0][1].positions.get("BTC") is None or         {b.trader: b for _, b in store.open_books("test")}["0xa"].positions == {}
+
+
+def test_dashboard_builds_from_store(setup, monkeypatch, tmp_path):
+    from collector import health
+    from papertrade import dashboard
+    engine, ex, store = setup
+    engine.step(T0)
+    engine.step(T0 + timedelta(minutes=6))          # second snapshot: sparklines have two points
+    store.commit()
+    monkeypatch.setattr(dashboard, "DB_PATH", tmp_path / "pt.db")
+    monkeypatch.setattr(dashboard, "Store", lambda: store)
+    monkeypatch.setattr(dashboard, "read_json", lambda path, default: {"done": 10, "wallets": ["w"] * 40})
+    monkeypatch.setattr(health, "check", lambda: [("OK", "leaderboard: fine"), ("FAIL", "wallets: stale")])
+    store.close = lambda: None                      # build() must not close the fixture's connection
+    page = dashboard.build(T0 + timedelta(minutes=10))
+    assert ">test<" in page and "<svg" in page and "rebalance" in page
+    assert 'class="bad">FAIL' in page and "wallets: stale" in page
+    assert "congelados" in page and "censo: 10/40" in page

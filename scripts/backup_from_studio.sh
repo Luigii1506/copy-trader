@@ -20,7 +20,7 @@ mkdir -p "$DEST"
 # The paper-trading database is written continuously: take a consistent SQLite snapshot first.
 $SSH "$HOST" 'db=~/data/copy-trader/papertrade/papertrade.db; [ -f "$db" ] && sqlite3 "$db" ".backup $HOME/data/copy-trader/papertrade/snapshot.db" || true'
 if ! rsync -az -e "$SSH" --exclude '*.lock' --include 'raw/***' --include 'universe/***' --include 'state/***' \
-     --include 'papertrade/' --include 'papertrade/snapshot.db' \
+     --include 'papertrade/' --include 'papertrade/snapshot.db' --include 'dashboard.html' \
      --exclude '*' "$HOST:data/copy-trader/" "$DEST/"; then
   notify "Backup failed: Mac Studio unreachable?"
   exit 1

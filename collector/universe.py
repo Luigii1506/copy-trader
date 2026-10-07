@@ -8,6 +8,7 @@ Cohorts (a wallet may belong to several):
 - top_month_roi:   best 30-day ROI (with a minimum account size, to skip dust accounts)
 - random:          random sample of eligible wallets; the control group for persistence tests
 - papertrade:      traders a paper-trading strategy follows (their fills feed the behavior exit rules)
+- candidates:      top census traders by the live signals (collector.sync.candidate_wallets)
 """
 
 from __future__ import annotations

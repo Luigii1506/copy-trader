@@ -262,3 +262,18 @@ def test_universe_add_followed_traders_is_append_only(data_dir):
     assert universe.add(["0xaaa"], "papertrade", now) == 0
     assert universe.add(["0xaaa"], "random", now) == 0
     assert universe.load()["wallets"]["0xaaa"]["cohorts"] == ["papertrade", "random"]
+
+
+def test_candidate_funnel_adds_top_scored_wallets(data_dir, monkeypatch):
+    import polars as pl
+    from collector import sync
+
+    pool = pl.DataFrame({"user": ["0xs1", "0xs2", "0xh1"],
+                         "trader_score": [90.0, 80.0, None],
+                         "sharpe": [0.1, 0.2, 3.5]})
+    monkeypatch.setattr("papertrade.selection.candidate_signals", lambda now: pool)
+    assert sync.candidate_wallets() == ["0xh1", "0xs1", "0xs2"]
+
+    monkeypatch.setattr("papertrade.selection.candidate_signals",
+                        lambda now: (_ for _ in ()).throw(RuntimeError("no data")))
+    assert sync.candidate_wallets() == []     # the funnel must never break the wallets job

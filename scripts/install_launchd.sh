@@ -8,6 +8,7 @@
 #   normalize    4x/day, ~70 min after each wallets run   raw JSON -> Parquet (feeds the behavior watch)
 #   census       manual           one-off equity-history census (launchctl kickstart ...census)
 #   papertrade   always           paper-trading engine (KeepAlive; see docs/decisions/ADR-002)
+#   dashboard    every 30 min     writes dashboard.html (no API use)
 # Jobs run at low CPU/IO priority under caffeinate so the Mac doesn't idle-sleep mid-run.
 # A Mac that is asleep at a scheduled time runs the job once on wake.
 set -euo pipefail
@@ -89,6 +90,7 @@ install_job wallets 02:30 08:30 14:30 18:30
 install_job normalize 03:40 09:40 15:40 19:40
 install_job census manual
 install_job papertrade always
+install_job dashboard every=1800
 
 echo "binary: $BIN"
 echo "data:   $DATA"

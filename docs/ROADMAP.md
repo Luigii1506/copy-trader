@@ -42,14 +42,14 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 3. ~~Reglas de salida por comportamiento~~ hechas (`papertrade/watch.py`, ADR-002); umbrales por calibrar con la tabla `flags`.
 4. ~~Risk engine y portafolio~~ hecho (`papertrade/risk.py`, ADR-002): grupos correlacionados (21 de 33 seguidos eran uno solo), topes 30 %/trader y 50 %/grupo, pausa por pérdida diaria. Falta: allocation por score (con TraderScore).
 5. ~~Realismo del simulador~~ hecho: lotes por `szDecimals`, mínimo de $10 por orden, objetivos no replicables registrados.
-6. Alertas al celular (Telegram / ntfy).
-7. Dashboard mínimo (sección 31).
+6. Alertas al celular (Telegram / ntfy) — espera decisión del usuario.
+7. ~~Dashboard mínimo~~ hecho: `copy-trader dashboard` cada 30 min; llega a la laptop vía backup.
 8. Descubrimiento vía Invo (dirección del builder → `builder_fills`).
 9. Capa de IA (fase 6): clasificación de estilo y explicaciones.
 10. Ejecución real (fase 7), solo tras paper trading confirmado.
 
 **Mejoras**
-- ~~Descargar fills de los traders seguidos~~ hecho (cohorte `papertrade` del universo). Falta: fills de los candidatos top del censo antes de seleccionarlos (hoy el vigilante solo ve a quien ya se copia).
+- ~~Descargar fills de los traders seguidos y de los candidatos top del censo~~ hecho (cohortes `papertrade` y `candidates`: top 100 por score + top 50 por sharpe en cada corrida de wallets).
 - Tracking error: ya se guarda el capital del trader junto al del libro (`book_equity`); falta el análisis.
 - ~~CI en GitHub Actions~~ hecho.
 - Calibrar los umbrales de las reglas de salida con los disparos registrados.

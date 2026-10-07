@@ -9,6 +9,7 @@
     python -m collector.sync papertrade    # paper-trading engine, runs forever (docs/decisions/ADR-002)
     python -m collector.sync papertrade-status
     python -m collector.sync papertrade-halt   # kill switch: close every paper position and stop
+    python -m collector.sync dashboard     # write DATA_DIR/dashboard.html (plan section 31)
 
 Installed as the `copy-trader` command (`uv tool install .`), which is what launchd runs.
 """
@@ -125,12 +126,40 @@ def followed_by_papertrade() -> list[str]:
         return [r[0] for r in db.execute("select distinct trader from books where closed_at is null")]
 
 
+CANDIDATES_TOP_SCORE = 100
+CANDIDATES_TOP_SHARPE = 50
+
+
+def candidate_wallets() -> list[str]:
+    """Top census traders by the live selection signals.
+
+    Their fills make behavior penalties and exit rules apply to the wallets the engine is most
+    likely to pick next, instead of only to those it already follows. Append-only via the
+    `candidates` cohort, so the covered set only grows."""
+    try:
+        import polars as pl
+        from papertrade.selection import candidate_signals
+        pool = candidate_signals(utcnow())
+        by_score = (pool.filter(pl.col("trader_score").is_not_null())
+                    .sort("trader_score", descending=True).head(CANDIDATES_TOP_SCORE)["user"].to_list())
+        by_sharpe = (pool.filter(pl.col("sharpe").is_not_null() & pl.col("sharpe").is_finite())
+                     .sort("sharpe", descending=True).head(CANDIDATES_TOP_SHARPE)["user"].to_list())
+        return sorted(set(by_score) | set(by_sharpe))
+    except Exception:
+        log.exception("candidate funnel failed; continuing without it")
+        return []
+
+
 def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:
     started = utcnow()
     followed = followed_by_papertrade()
     if followed:
         added = universe.add(followed, "papertrade", started)
         log.info("wallets: %d traders followed by paper trading, %d new in universe", len(followed), added)
+    candidates = candidate_wallets()
+    if candidates:
+        added = universe.add(candidates, "candidates", started)
+        log.info("wallets: %d score/sharpe candidates, %d new in universe", len(candidates), added)
     wallets = sorted(universe.load()["wallets"])[:limit]
     if not wallets:
         log.error("universe is empty; run `python -m collector.sync leaderboard` first")
@@ -204,12 +233,15 @@ def job_lock(name: str) -> Iterator[bool]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hyperliquid raw data collector")
     parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize", "health", "census",
-                                        "papertrade", "papertrade-status", "papertrade-halt"])
+                                        "papertrade", "papertrade-status", "papertrade-halt", "dashboard"])
     parser.add_argument("--limit", type=int, help="only sync the first N tracked wallets (for testing)")
     args = parser.parse_args()
 
     if args.job == "health":
         raise SystemExit(health.main())
+    if args.job == "dashboard":
+        from papertrade import dashboard
+        raise SystemExit(dashboard.main())
     if args.job == "papertrade-status":
         from papertrade import status
         raise SystemExit(status.main())

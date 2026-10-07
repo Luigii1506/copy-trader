@@ -50,6 +50,10 @@ uv sync --all-groups     # incluye research (DuckDB, Jupyter) y dev (pytest)
 uv run pytest
 ```
 
+## Dashboard
+
+`copy-trader dashboard` genera `~/data/copy-trader/dashboard.html` cada 30 min en la Studio; el backup lo copia a la laptop: abrir `~/data/copy-trader-backup/dashboard.html` en el navegador (estrategias con sparklines, eventos, señales de comportamiento y salud del collector).
+
 ## Paper trading
 
 ```bash
