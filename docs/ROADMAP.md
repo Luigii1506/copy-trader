@@ -11,6 +11,8 @@ Regla: **primero datos → análisis → simulación → automatización → din
 - **M1, data pipeline:** collector, raw → Parquet, scheduling en la Mac Studio, backup en la laptop, health check con alertas y tests.
 - **M2 (inicio), método de persistencia:** [`analysis/persistence.py`](../analysis/persistence.py), validado con mundos sintéticos; notebook [01_persistence](../notebooks/01_persistence.ipynb). Retornos con Modified Dietz para que los depósitos no inflen resultados.
 - **M2, señales de comportamiento:** [`analysis/behavior.py`](../analysis/behavior.py) reconstruye operaciones desde los fills (incl. flips y liquidaciones) y mide averaging down, martingala, leverage, concentración, sobreoperación, dependencia de un trade y cambios de estilo. Validado con secuencias sintéticas; detecta en datos reales un trader con +3,500 % de retorno, 10x de leverage mediano y 13 liquidaciones en 90 días.
+- **M4 (adelantado), backtest de copy trading:** [`analysis/backtest.py`](../analysis/backtest.py): top-N por regla cada 4 semanas sin look-ahead, con costos, vs Buy & Hold BTC y vs 20 carteras aleatorias. Al correrlo con datos reales destapó tres defectos en el cálculo de retornos (ganancias spot/airdrop contadas como trading, retiros que encogían la base de capital, punto de origen sintético), ya corregidos y con tests.
+  Resultado preliminar (1,265 traders, 2023-05 → 2026-09, **sesgado**: incluye las 100 wallets elegidas hoy por mayor PnL histórico): el trader promedio pierde (−3 %), random −9 % de mediana, BTC +193 %. Ninguna regla simple supera a BTC salvo "mayor PnL en USD" (+415 %), que es justo la cohorte sesgada. **No concluir nada hasta correrlo solo con el censo.**
 - **M3 (adelantado), motor de paper trading:** [`papertrade/`](../papertrade), 5 estrategias en paralelo con random como control ([ADR-002](decisions/ADR-002-paper-trading.md)). Copia proporcional en todos los perp dex (incluido HIP-3), con precios de impacto, fees, funding horario, kill switches y auditoría.
 
 ## Siguiente
@@ -36,7 +38,7 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 
 **Desarrollo nuevo**
 1. TraderScore v1: rendimiento + consistencia + comportamiento; con Deflated Sharpe y mínimo de operaciones.
-2. Backtest de copy trading sobre universo + censo: top-N por score cada mes, con costos, vs Buy & Hold BTC (sección 41).
+2. ~~Backtest de copy trading~~ hecho; falta correrlo con el censo completo y por cohortes (solo censo vs universo).
 3. Reglas de salida por comportamiento en el paper trading: leverage escalando, martingala, cambio de estilo → dejar de copiar.
 4. Risk engine y portafolio (secciones 27-28): correlación entre traders, exposición correlacionada, drawdown de portafolio, allocation por score.
 5. Realismo del simulador: tamaño mínimo de orden ($10) y decimales por moneda; posiciones no replicables con capital chico.
