@@ -21,6 +21,7 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import shutil
 import time
 from datetime import timezone
 from email.utils import parsedate_to_datetime
@@ -37,6 +38,10 @@ log = logging.getLogger(__name__)
 RAW_DIR = DATA_DIR / "raw" / PLATFORM
 PROCESSED_DIR = DATA_DIR / "processed" / PLATFORM
 SETTLE_SECONDS = 300
+# Bump whenever a row builder changes its columns or semantics: every processed table is then
+# rebuilt from raw on the next run, so old and new schemas never coexist.
+SCHEMA_VERSION = 2
+VERSION_FILE = PROCESSED_DIR / "SCHEMA_VERSION"
 
 Rows = list[dict[str, Any]]
 
@@ -199,7 +204,20 @@ def _process(raw: Path, dataset: str) -> int:
     return sum(len(r) for r in rows.values())
 
 
+def _ensure_schema_version() -> None:
+    current = VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else None
+    if current == str(SCHEMA_VERSION):
+        return
+    if PROCESSED_DIR.exists():
+        log.warning("processed schema %s -> %s: rebuilding every table from raw", current, SCHEMA_VERSION)
+        for table in {t for builders in TABLES.values() for t, _ in builders}:
+            shutil.rmtree(PROCESSED_DIR / table, ignore_errors=True)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    VERSION_FILE.write_text(f"{SCHEMA_VERSION}\n")
+
+
 def run() -> None:
+    _ensure_schema_version()
     now = time.time()
     done = skipped = 0
     for dataset, builders in TABLES.items():

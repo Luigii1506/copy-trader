@@ -131,6 +131,25 @@ def test_normalize_run_tolerates_truncated_raw_file(data_dir):
     assert pl.read_parquet(out)["tid"].to_list() == [1, 2]
 
 
+def test_normalize_rebuilds_processed_tables_when_schema_version_changes(data_dir):
+    raw = data_dir / "raw" / "hyperliquid" / "fills" / "date=2026-10-06" / "20261006T000000Z.jsonl.gz"
+    raw.parent.mkdir(parents=True)
+    with gzip.open(raw, "wt") as fh:
+        fh.write(json.dumps({"request": {"user": "0xabc"}, "payload": [fill(1, 1)]}) + "\n")
+    old = raw.stat().st_mtime - normalize.SETTLE_SECONDS - 1
+    os.utime(raw, (old, old))
+
+    stale = normalize.PROCESSED_DIR / "fills" / "date=2026-10-06" / "stale.parquet"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"old schema")
+    normalize.VERSION_FILE.write_text("1\n")
+
+    normalize.run()
+    assert not stale.exists()
+    assert (normalize.PROCESSED_DIR / "fills" / "date=2026-10-06" / "20261006T000000Z.parquet").exists()
+    assert normalize.VERSION_FILE.read_text().strip() == str(normalize.SCHEMA_VERSION)
+
+
 def test_health_fails_when_jobs_are_stale(data_dir):
     now = datetime.now(timezone.utc)
     write_json(data_dir / "state" / "last_run_leaderboard.json", {"finished_at": now.isoformat()})
