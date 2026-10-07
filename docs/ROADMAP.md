@@ -54,6 +54,16 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 - ~~CI en GitHub Actions~~ hecho.
 - Calibrar los umbrales de las reglas de salida con los disparos registrados.
 
+## Línea 2 (después del TraderScore): acumulación inteligente
+
+Pedido el 2026-10-07: un ranking para **acumular** cripto (y quizá acciones), sin predecir el momento. Misma disciplina que con los traders: reglas, backtest sin look-ahead, y comparar contra acumular BTC y contra el azar.
+
+- Score por activo: calidad (liquidez, antigüedad, no haber perdido >95 % desde máximo; en acciones, fundamentales), fuerza relativa 6-12 meses frente a su mercado, dimensionamiento por volatilidad, y compras mayores en el **núcleo** (BTC/ETH, índices) cuando está lejos de su tendencia larga. Nunca "comprar porque cayó" en altcoins.
+- Salida: ranking semanal con monto sugerido por activo. Sin señales de entrada/salida.
+- Experimento que lo decide: cada mes "5 más fuertes" vs "5 más caídos" vs "solo BTC" vs "5 al azar", 2020 → hoy, con costos.
+- Datos: velas diarias de todas las monedas de Hyperliquid (falta capturarlas); acciones requieren fuente de precios/fundamentales y bróker en México.
+- Estimación: 3-4 días. No empezar antes de la respuesta del censo y el TraderScore v1.
+
 ## Puntos de decisión
 
 1. **~2026-10-08, ¿hay persistencia?** Con el censo (`ic_tstat ≥ 2`, `ic_positive ≥ 0.6`, mejor que `random`).
