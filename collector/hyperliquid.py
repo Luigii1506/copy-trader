@@ -9,6 +9,7 @@ Sources:
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from typing import Any
@@ -21,8 +22,10 @@ INFO_URL = "https://api.hyperliquid.xyz/info"
 LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
 VAULTS_URL = "https://stats-data.hyperliquid.xyz/Mainnet/vaults"
 
-# Documented: 1200 weight/min per IP. Stay below it to leave headroom.
-WEIGHT_PER_MINUTE = 1000
+# Documented: 1200 weight/min per IP, shared by every process on the machine. Each job gets its own
+# share through COPY_TRADER_WEIGHT_PER_MINUTE (set per job by scripts/install_launchd.sh) so jobs
+# running at the same time stay under the limit together.
+WEIGHT_PER_MINUTE = int(os.environ.get("COPY_TRADER_WEIGHT_PER_MINUTE", "1000"))
 
 # Documented weights. Everything not listed weighs 20.
 LIGHT_TYPES = {"l2Book", "allMids", "clearinghouseState", "orderStatus", "spotClearinghouseState", "exchangeStatus"}

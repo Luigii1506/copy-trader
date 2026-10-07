@@ -5,6 +5,7 @@
     python -m collector.sync all           # both, in that order
     python -m collector.sync normalize     # raw JSON -> Parquet tables (see collector/normalize.py)
     python -m collector.sync health        # are the jobs running on schedule? exit code 1 if not
+    python -m collector.sync census        # equity history of every leaderboard trader (one-off, resumable)
 
 Installed as the `copy-trader` command (`uv tool install .`), which is what launchd runs.
 """
@@ -21,7 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from . import health, normalize, universe
+from . import census, health, normalize, universe
 from .hyperliquid import LEADERBOARD_URL, VAULTS_URL, HyperliquidClient
 from .storage import DATA_DIR, RawWriter, envelope, read_json, utcnow, write_json
 
@@ -168,7 +169,7 @@ def job_lock(name: str) -> Iterator[bool]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hyperliquid raw data collector")
-    parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize", "health"])
+    parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize", "health", "census"])
     parser.add_argument("--limit", type=int, help="only sync the first N tracked wallets (for testing)")
     args = parser.parse_args()
 
@@ -184,6 +185,13 @@ def main() -> None:
             return
         if args.job == "normalize":
             normalize.run()
+            return
+        if args.job == "census":
+            client = HyperliquidClient()
+            try:
+                census.run(client)
+            finally:
+                client.close()
             return
         client = HyperliquidClient()
         try:

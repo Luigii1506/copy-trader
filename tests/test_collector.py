@@ -178,3 +178,38 @@ def test_leaderboard_rows_carry_source_time():
               "payload": {"leaderboardRows": [leaderboard_row("0xabc", 1, 0, 0)]}}
     [row] = normalize.leaderboard_rows(record)
     assert row["data_as_of"] == "2026-10-06T23:21:14+00:00"
+
+
+class FakePortfolioClient:
+    def __init__(self, fail=()):
+        self.seen, self.fail = [], set(fail)
+
+    def portfolio(self, user):
+        if user in self.fail:
+            raise RuntimeError("boom")
+        self.seen.append(user)
+        return [["allTime", {"accountValueHistory": [[1, "10"]], "pnlHistory": [[1, "0"]], "vlm": "0"}]]
+
+
+def test_census_skips_vaults_and_small_volume_and_resumes(data_dir, monkeypatch):
+    from collector import census
+    from collector.storage import RawWriter, envelope, utcnow
+    now = utcnow()
+    rows = [leaderboard_row(f"0x{i:040x}", 1000, 0, 0) for i in range(120)]
+    for row in rows:
+        row["windowPerformances"][3][1]["vlm"] = "50000"
+    rows[0]["windowPerformances"][3][1]["vlm"] = "5"          # below volume threshold
+    RawWriter("leaderboard", now).write(envelope("leaderboard", {}, {"leaderboardRows": rows}, now))
+    vault = {"summary": {"vaultAddress": f"0x{1:040x}"}}
+    RawWriter("vaults", now).write(envelope("vaults", {}, [vault], now))
+
+    monkeypatch.setattr(census, "SAVE_EVERY", 10)
+    first = FakePortfolioClient(fail={f"0x{5:040x}"})
+    census.run(first)
+    assert census.progress() == (118, 118)
+    assert f"0x{0:040x}" not in first.seen and f"0x{1:040x}" not in first.seen
+    assert first.seen != sorted(first.seen)                     # random order
+
+    second = FakePortfolioClient()
+    census.run(second)                                          # already complete: nothing refetched
+    assert second.seen == []

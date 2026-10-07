@@ -9,6 +9,7 @@ Tables:
     positions          one row per open position per clearinghouseState call
     equity_history     portfolio() account value / PnL series per period (repeats across runs; dedup when querying)
     vaults             one row per vault per vaults snapshot (Hyperliquid's native copy trading)
+    equity_census      equity_history for every leaderboard trader (collector/census.py)
     fills              one row per fill (overlaps across runs; dedup on user, tid, oid when querying)
 
 A raw file is (re)processed when its Parquet is missing or older than it, and skipped while it is
@@ -173,6 +174,7 @@ TABLES: dict[str, list[tuple[str, Callable[[dict[str, Any]], Rows]]]] = {
     "leaderboard": [("leaderboard", leaderboard_rows)],
     "clearinghouse_state": [("account_snapshots", account_rows), ("positions", position_rows)],
     "portfolio": [("equity_history", equity_rows)],
+    "portfolio_census": [("equity_census", equity_rows)],
     "fills": [("fills", fill_rows)],
     "vaults": [("vaults", vault_rows)],
 }

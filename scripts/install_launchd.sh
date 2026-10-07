@@ -6,6 +6,7 @@
 #   leaderboard  every hour       checks for a new leaderboard version; stores at most one per 6h
 #   wallets      02:30 08:30 14:30 18:30
 #   normalize    04:15 19:45      raw JSON -> Parquet
+#   census       manual           one-off equity-history census (launchctl kickstart ...census)
 # Jobs run at low CPU/IO priority under caffeinate so the Mac doesn't idle-sleep mid-run.
 # A Mac that is asleep at a scheduled time runs the job once on wake.
 set -euo pipefail
@@ -19,7 +20,10 @@ uv tool install --reinstall --quiet "$REPO"
 BIN="$(command -v copy-trader || echo "$HOME/.local/bin/copy-trader")"
 mkdir -p "$DATA/logs" "$AGENTS"
 
-schedule() {  # "every=SECONDS" or "HH:MM HH:MM ..." -> launchd schedule keys
+schedule() {  # "manual", "every=SECONDS" or "HH:MM HH:MM ..." -> launchd schedule keys
+  if [[ "$1" == manual ]]; then
+    return  # no schedule: started with launchctl kickstart
+  fi
   if [[ "$1" == every=* ]]; then
     echo "    <key>StartInterval</key><integer>${1#every=}</integer>"
     return
@@ -31,6 +35,10 @@ schedule() {  # "every=SECONDS" or "HH:MM HH:MM ..." -> launchd schedule keys
   done
   echo "    </array>"
 }
+
+# Share of the 1200/min API weight limit per job. Jobs can overlap, so the shares must add up
+# to less than 1200 (leaderboard and normalize don't use the weighted API).
+weight() { case "$1" in wallets) echo 500 ;; census) echo 650 ;; *) echo 100 ;; esac; }
 
 install_job() {
   local job="$1"; shift
@@ -49,7 +57,10 @@ install_job() {
     </array>
 $(schedule "$@")
     <key>EnvironmentVariables</key>
-    <dict><key>COPY_TRADER_DATA</key><string>$DATA</string></dict>
+    <dict>
+        <key>COPY_TRADER_DATA</key><string>$DATA</string>
+        <key>COPY_TRADER_WEIGHT_PER_MINUTE</key><string>$(weight "$job")</string>
+    </dict>
     <key>WorkingDirectory</key><string>$DATA</string>
     <key>StandardOutPath</key><string>$DATA/logs/$job.log</string>
     <key>StandardErrorPath</key><string>$DATA/logs/$job.log</string>
@@ -70,6 +81,7 @@ EOF
 install_job leaderboard every=3600
 install_job wallets 02:30 08:30 14:30 18:30
 install_job normalize 04:15 19:45
+install_job census manual
 
 echo "binary: $BIN"
 echo "data:   $DATA"
