@@ -142,6 +142,11 @@ def formation_signals(returns: pl.DataFrame, at: datetime, lookback_weeks: int,
         sharpe=pl.col("ret").mean() / pl.col("ret").std(),
         low_dd=pl.col("dd").min(),  # max drawdown as a negative number: higher = shallower
         pnl_usd=pl.col("dpnl").sum(),
+        consistency=(pl.col("ret") > 0).mean(),  # share of profitable steps
+        # Stability: same average return in both halves of the window (0 = identical; more
+        # negative = the style's results changed). Groups preserve the chronological sort above.
+        stability=-(pl.col("ret").slice(0, pl.len() // 2).mean()
+                    - pl.col("ret").slice(pl.len() // 2, pl.len() - pl.len() // 2).mean()).abs(),
     ).filter(pl.col("n_obs") >= min_obs)
     return signals.sort("user").with_columns(
         random=pl.Series(values=_uniform(len(signals), seed), dtype=pl.Float64)

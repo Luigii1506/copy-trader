@@ -7,18 +7,22 @@ minus traders too active to copy with a 60 s poll (when their fills are known).
 
 from __future__ import annotations
 
+import logging
 import random
 from datetime import datetime, timedelta
 
 import polars as pl
 
 from analysis.backtest import MAX_STEP_ABS_RET
+from analysis.behavior import behavior_features
 from analysis.persistence import formation_signals, period_returns
+from analysis.score import score_from_signals
 from collector.storage import DATA_DIR, PLATFORM
 
 from .config import LOOKBACK_WEEKS, MAX_FILLS_PER_DAY, MIN_TRADER_EQUITY, Strategy
 
 PROCESSED = DATA_DIR / "processed" / PLATFORM
+log = logging.getLogger(__name__)
 
 
 def _read(table: str) -> pl.DataFrame | None:
@@ -64,6 +68,15 @@ def candidate_signals(now: datetime) -> pl.DataFrame:
         pool = pool.join(activity, on="user", how="left").filter(
             pl.col("last_fill_ms").is_null()
             | ((pl.col("fills_per_day") <= MAX_FILLS_PER_DAY) & (pl.col("last_fill_ms") >= since)))
+
+    # TraderScore: behavior penalties where fills exist (universe + followed); neutral elsewhere.
+    behavior = None
+    if fills is not None:
+        try:
+            behavior = behavior_features(fills, equity, now)
+        except Exception:
+            log.exception("behavior features failed; scoring without penalties")
+    pool = score_from_signals(pool, behavior)
 
     board = _read("leaderboard")
     if board is not None:

@@ -26,6 +26,7 @@ STRATEGIES = [
     Strategy("top_sharpe", "sharpe"),
     Strategy("low_drawdown", "low_dd"),
     Strategy("random", "random"),
+    Strategy("top_score", "trader_score"),   # TraderScore v1 (analysis/score.py)
 ]
 
 # Costs (Hyperliquid docs, 2026-10-06)

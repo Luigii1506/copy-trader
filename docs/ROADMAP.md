@@ -37,7 +37,7 @@ Regla: **primero datos → análisis → simulación → automatización → din
 Lo construido hasta hoy es infraestructura y medición. Lo que falta es inteligencia y control:
 
 **Desarrollo nuevo**
-1. TraderScore v1: rendimiento + consistencia + comportamiento; con Deflated Sharpe y mínimo de operaciones.
+1. ~~TraderScore v1~~ hecho (`analysis/score.py`, anexo en research/2026-10-07): pesos del plan validados por walk-forward (fuera de muestra: +20 % CAGR, Sharpe 2.33, DD −2 %); sexta estrategia en vivo. Falta: fills de candidatos top del censo para que las penalizaciones cubran a todos, y re-evaluar pesos con más historia.
 2. ~~Backtest de copy trading~~ hecho; falta correrlo con el censo completo y por cohortes (solo censo vs universo).
 3. ~~Reglas de salida por comportamiento~~ hechas (`papertrade/watch.py`, ADR-002); umbrales por calibrar con la tabla `flags`.
 4. ~~Risk engine y portafolio~~ hecho (`papertrade/risk.py`, ADR-002): grupos correlacionados (21 de 33 seguidos eran uno solo), topes 30 %/trader y 50 %/grupo, pausa por pérdida diaria. Falta: allocation por score (con TraderScore).

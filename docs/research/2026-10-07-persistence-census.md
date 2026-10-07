@@ -57,3 +57,24 @@ La señal gana a random en ambas mitades. Contra BTC es **complementaria por ré
 ## Decisión
 
 El punto de decisión 1 del roadmap se responde **sí**: continuar con TraderScore v1 (combinando sharpe/low_dd con las señales de comportamiento), validación walk-forward, y reinicio del paper trading con el pool completo y el risk engine.
+
+---
+
+## Anexo (mismo día): TraderScore v1
+
+Score = 100 × percentil cruzado ponderado de {sharpe 25 %, drawdown 20 %, consistencia 20 %, longevidad 15 %, estabilidad 10 %} − penalizaciones de comportamiento planas (liquidación −15, martingala −10, leverage p95>15x −10, concentración −5). Implementación: `analysis/score.py`.
+
+**Selección de pesos por walk-forward** (elegir con la 1ª mitad, juzgar con la 2ª):
+
+| Pesos | 1ª mitad Sharpe | 2ª mitad (fuera de muestra) |
+|---|---|---|
+| **plan 25/20/20/15/10** | **1.06 (mejor)** | **+20 % CAGR, Sharpe 2.33, DD −2 %** |
+| sharpe-heavy 50/20/20/5/5 | 0.90 | +36 %, 2.06, −6 % |
+| sharpe+consistencia 60/40 | 0.92 | +101 %, 2.71, −7 % |
+| pure sharpe | 0.81 | +96 %, 2.56, −8 % |
+
+Los pesos del plan ganan la selección honesta y entregan el mejor riesgo fuera de muestra. `sharpe+consistency` rinde más pero no era elegible con la información de la 1ª mitad: anotado como candidato a vigilar, no como decisión.
+
+Bug encontrado con datos reales (test de regresión añadido): polars ordena NaN por encima de todo número, así que wallets planas con Sharpe indefinido llegaban al percentil máximo. Ahora solo rankean valores finitos y un componente ausente cuenta como el peor percentil.
+
+**En vivo:** `top_score` entra como sexta estrategia del paper trading, con penalizaciones de comportamiento donde hay fills (universo + seguidos) y neutras donde no.
