@@ -145,14 +145,28 @@ def test_features_report_concentration_liquidations_and_window_coverage():
     assert feats["window_complete"] is False   # first fill is inside the 90-day window
 
 
-def test_style_change_ratios():
+def style_change_tape():
     tape = Tape()
     for _ in range(10):                       # first ~20 h: small, 1-hour trades
         tape.fill("u", "BTC", 1, 100).fill("u", "BTC", -1, 100)
     tape.t = int((NOW - timedelta(days=10)).timestamp() * 1000)
     for _ in range(5):                        # last 10 days: 4x bigger, 4-hour trades
         tape.fill("u", "BTC", 4, 100).fill("u", "BTC", -4, 100, hours=4)
-    feats = behavior_features(tape.frame(), equity_curve("u", 1000.0), NOW).to_dicts()[0]
+    return tape
+
+
+def test_style_change_ratios():
+    feats = behavior_features(style_change_tape().frame(), equity_curve("u", 1000.0), NOW).to_dicts()[0]
     assert feats["change_size"] == pytest.approx(4.0)
     assert feats["change_duration"] == pytest.approx(4.0)
     assert feats["coin_overlap"] == 1.0
+
+
+def test_size_change_is_relative_to_equity():
+    """4x bigger trades on 4x more capital is the same behavior."""
+    cut = int((NOW - timedelta(days=10)).timestamp() * 1000)
+    eq = pl.DataFrame({"user": ["u"] * 3, "period": ["allTime"] * 3,
+                       "time_ms": [T0 - H, cut - H, int(NOW.timestamp() * 1000)],
+                       "account_value": [1000.0, 4000.0, 4000.0], "pnl": [0.0, 0.0, 0.0]})
+    feats = behavior_features(style_change_tape().frame(), eq, NOW).to_dicts()[0]
+    assert feats["change_size"] == pytest.approx(1.0)

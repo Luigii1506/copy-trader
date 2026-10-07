@@ -246,11 +246,19 @@ def _leverage(exposure: pl.DataFrame) -> pl.DataFrame:
 
 
 def _style_change(trades: pl.DataFrame, exposure: pl.DataFrame, now_ms: int, recent_days: int) -> pl.DataFrame:
-    """Recent period vs the rest of the window: ratios of medians (1 = no change) and coin overlap."""
+    """Recent period vs the rest of the window: ratios of medians (1 = no change) and coin overlap.
+
+    Trade size is measured relative to the trader's equity when the trade opened, so a trader who
+    deposited 20x more and trades 20x bigger has not changed behavior; one who trades 3x bigger
+    on the same capital has."""
     cut = now_ms - recent_days * DAY_MS
-    t = trades.with_columns(recent=pl.col("opened_ms") >= cut)
+    equity_at_open = exposure.select("user", opened_ms=pl.col("time_ms"), equity_at_open=pl.col("equity")).unique(
+        subset=["user", "opened_ms"], keep="first")
+    t = (trades.join(equity_at_open, on=["user", "opened_ms"], how="left")
+         .with_columns(recent=pl.col("opened_ms") >= cut,
+                       size_frac=pl.when(pl.col("equity_at_open") > 0).then(pl.col("initial_notional") / pl.col("equity_at_open"))))
     per = t.group_by("user", "recent").agg(
-        size=pl.col("initial_notional").median(), duration=pl.col("duration_h").median(),
+        size=pl.col("size_frac").median(), duration=pl.col("duration_h").median(),
         coins=pl.col("coin").unique(),
     )
     e = exposure.filter(pl.col("leverage").is_not_null()).with_columns(recent=pl.col("time_ms") >= cut)
