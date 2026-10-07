@@ -24,7 +24,7 @@ Corre en la Mac Studio (`admin@admins-mac-studio` por Tailscale), repo en `~/cop
 
 | Job | Horario (local) | Qué hace |
 |---|---|---|
-| `leaderboard` | 17:05 | snapshot completo del leaderboard + refresca universo |
+| `leaderboard` | cada hora | revisa si hay versión nueva del leaderboard; guarda máx. 1 cada 6 h (+ vaults) y refresca universo |
 | `wallets` | 02:30 08:30 14:30 18:30 | estado, portfolio y fills nuevos |
 | `normalize` | 04:15 19:45 | crudo → Parquet |
 

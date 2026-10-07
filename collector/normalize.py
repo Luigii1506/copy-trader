@@ -21,6 +21,8 @@ import gzip
 import json
 import logging
 import time
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,13 @@ def _f(value: Any) -> float | None:
     return None if value is None else float(value)
 
 
+def _http_date(value: str | None) -> str | None:
+    """HTTP Last-Modified -> ISO 8601 UTC."""
+    if not value:
+        return None
+    return parsedate_to_datetime(value).astimezone(timezone.utc).isoformat()
+
+
 def _records(path: Path) -> Iterator[dict[str, Any]]:
     """Yields complete records; a run killed mid-write leaves a truncated last record, which is dropped."""
     try:
@@ -55,9 +64,11 @@ def _records(path: Path) -> Iterator[dict[str, Any]]:
 
 def leaderboard_rows(record: dict[str, Any]) -> Rows:
     rows = []
+    data_as_of = _http_date(record.get("source_version", {}).get("last_modified"))
     for r in record["payload"]["leaderboardRows"]:
         row = {
             "snapshot_at": record["fetched_at"],
+            "data_as_of": data_as_of,  # when Hyperliquid produced it; None for early snapshots
             "user": r["ethAddress"].lower(),
             "display_name": r.get("displayName"),
             "account_value": _f(r["accountValue"]),

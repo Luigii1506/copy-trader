@@ -1,6 +1,6 @@
 """Collector entry point.
 
-    python -m collector.sync leaderboard   # full leaderboard + vaults snapshots, universe refresh (run daily)
+    python -m collector.sync leaderboard   # leaderboard + vaults snapshot when a new version exists (run hourly)
     python -m collector.sync wallets       # state, portfolio and new fills for every tracked wallet
     python -m collector.sync all           # both, in that order
     python -m collector.sync normalize     # raw JSON -> Parquet tables (see collector/normalize.py)
@@ -13,14 +13,16 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import json
 import logging
 import time
+from datetime import datetime, timedelta
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
 from . import health, normalize, universe
-from .hyperliquid import HyperliquidClient
+from .hyperliquid import LEADERBOARD_URL, VAULTS_URL, HyperliquidClient
 from .storage import DATA_DIR, RawWriter, envelope, read_json, utcnow, write_json
 
 log = logging.getLogger("collector")
@@ -42,21 +44,58 @@ def fill_gap_suspected(start_ms: int, fills: list[dict]) -> bool:
     return start_ms > 0 and bool(fills) and min(f["time"] for f in fills) > start_ms
 
 
-def sync_leaderboard(client: HyperliquidClient) -> None:
-    started = utcnow()
-    board = client.leaderboard()
-    RawWriter("leaderboard", started).write(envelope("leaderboard", {"url": "leaderboard"}, board, started))
-    _, added = universe.refresh(board, started)
-    rows = len(board["leaderboardRows"])
-    log.info("leaderboard: %d rows saved, %d wallets added to universe", rows, added)
+LEADERBOARD_VERSIONS_PATH = DATA_DIR / "state" / "leaderboard_versions.jsonl"
+MIN_SNAPSHOT_SPACING = timedelta(hours=6)
 
-    # Vaults are Hyperliquid's native copy trading, and their addresses must be told apart from traders.
-    fetched = utcnow()
-    vaults = client.vaults()
-    RawWriter("vaults", fetched).write(envelope("vaults", {"url": "vaults"}, vaults, fetched))
-    log.info("vaults: %d saved", len(vaults))
-    write_json(last_run_path("leaderboard"),
-               {"finished_at": utcnow().isoformat(), "rows": rows, "added": added, "vaults": len(vaults)})
+
+def sync_leaderboard(client: HyperliquidClient) -> None:
+    """Runs hourly. Downloads the leaderboard only when Hyperliquid has published a new version, and
+    at most once per MIN_SNAPSHOT_SPACING (~4 MB each). Every version seen is logged, stored or not,
+    which tells us how often the source actually updates."""
+    now = utcnow()
+    state_path = last_run_path("leaderboard")
+    state = read_json(state_path, {})
+    head = client.stats_version(LEADERBOARD_URL)
+    _log_version(head, now)
+
+    last_stored = state.get("stored_at")
+    if head["etag"] and head["etag"] == state.get("etag"):
+        log.info("leaderboard: unchanged since %s", state.get("last_modified"))
+    elif last_stored and now - datetime.fromisoformat(last_stored) < MIN_SNAPSHOT_SPACING:
+        log.info("leaderboard: new version %s, but last snapshot is under %s old; skipping",
+                 head["last_modified"], MIN_SNAPSHOT_SPACING)
+    else:
+        board, version = client.leaderboard()
+        record = envelope("leaderboard", {"url": LEADERBOARD_URL}, board, now)
+        record["source_version"] = version
+        RawWriter("leaderboard", now).write(record)
+        _, added = universe.refresh(board, now)
+        log.info("leaderboard: %d rows saved (data as of %s), %d wallets added to universe",
+                 len(board["leaderboardRows"]), version["last_modified"], added)
+
+        # Vaults are Hyperliquid's native copy trading, and their addresses must be told apart from traders.
+        vaults, vault_version = client.vaults()
+        record = envelope("vaults", {"url": VAULTS_URL}, vaults, utcnow())
+        record["source_version"] = vault_version
+        RawWriter("vaults", now).write(record)
+        log.info("vaults: %d saved", len(vaults))
+        state.update(etag=version["etag"], last_modified=version["last_modified"], stored_at=now.isoformat())
+
+    state["finished_at"] = utcnow().isoformat()
+    write_json(state_path, state)
+
+
+def _log_version(version: dict[str, str], seen_at: datetime) -> None:
+    """Append-only log of every distinct leaderboard version we observe."""
+    last = None
+    if LEADERBOARD_VERSIONS_PATH.exists():
+        lines = LEADERBOARD_VERSIONS_PATH.read_text().splitlines()
+        last = json.loads(lines[-1]) if lines else None
+    if last and last["etag"] == version["etag"]:
+        return
+    LEADERBOARD_VERSIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LEADERBOARD_VERSIONS_PATH, "a") as fh:
+        fh.write(json.dumps({**version, "first_seen": seen_at.isoformat()}) + "\n")
 
 
 def sync_wallets(client: HyperliquidClient, limit: int | None = None) -> None:

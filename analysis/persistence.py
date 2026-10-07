@@ -219,7 +219,12 @@ def leaderboard_persistence(
     survivorship bias. Returns one row per (A, signal); empty until two snapshots are far enough apart.
     """
     col = f"{period}_roi"
-    lb = leaderboard.with_columns(snap=pl.col("snapshot_at").str.to_datetime(time_zone="UTC"))
+    # Date each snapshot by when Hyperliquid produced it (data_as_of), falling back to fetch time for
+    # early snapshots taken before we recorded it. The same version fetched twice counts once.
+    as_of = pl.col("data_as_of") if "data_as_of" in leaderboard.columns else pl.lit(None, pl.String)
+    lb = leaderboard.with_columns(
+        snap=pl.coalesce(as_of, pl.col("snapshot_at")).str.to_datetime(time_zone="UTC")
+    ).unique(subset=["snap", "user"], keep="first")
     if exclude is not None:
         lb = lb.filter(~pl.col("user").is_in(exclude.implode()))
     snaps = lb["snap"].unique().sort().to_list()

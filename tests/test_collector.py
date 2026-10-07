@@ -138,3 +138,43 @@ def test_health_fails_when_jobs_are_stale(data_dir):
     failing = [msg for level, msg in health.check() if level == "FAIL"]
     assert len(failing) == 1 and failing[0].startswith("wallets: last finished 30.0h ago")
     assert health.main() == 1
+
+
+class FakeStatsClient:
+    def __init__(self):
+        self.etag, self.downloads = "v1", 0
+
+    def stats_version(self, url):
+        return {"etag": self.etag, "last_modified": "Tue, 06 Oct 2026 23:21:14 GMT"}
+
+    def leaderboard(self):
+        self.downloads += 1
+        board = {"leaderboardRows": [leaderboard_row("0xabc", 50_000, 0.1, 10)]}
+        return board, self.stats_version(None)
+
+    def vaults(self):
+        return [], self.stats_version(None)
+
+
+def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, monkeypatch):
+    from collector import sync
+    client = FakeStatsClient()
+    sync.sync_leaderboard(client)
+    sync.sync_leaderboard(client)  # same ETag -> no download
+    assert client.downloads == 1
+    client.etag = "v2"
+    sync.sync_leaderboard(client)  # new version, but < 6h after the last snapshot
+    assert client.downloads == 1
+    monkeypatch.setattr(sync, "MIN_SNAPSHOT_SPACING", timedelta(0))
+    sync.sync_leaderboard(client)
+    assert client.downloads == 2
+    versions = (data_dir / "state" / "leaderboard_versions.jsonl").read_text().splitlines()
+    assert [json.loads(v)["etag"] for v in versions] == ["v1", "v2"]
+
+
+def test_leaderboard_rows_carry_source_time():
+    record = {"fetched_at": "2026-10-07T00:05:00+00:00",
+              "source_version": {"last_modified": "Tue, 06 Oct 2026 23:21:14 GMT"},
+              "payload": {"leaderboardRows": [leaderboard_row("0xabc", 1, 0, 0)]}}
+    [row] = normalize.leaderboard_rows(record)
+    assert row["data_as_of"] == "2026-10-06T23:21:14+00:00"

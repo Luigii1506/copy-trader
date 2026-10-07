@@ -32,6 +32,10 @@ PER_ITEM_TYPES = {"userFills", "userFillsByTime", "historicalOrders", "userFundi
 FILLS_PAGE_SIZE = 2000  # documented max per userFillsByTime response
 
 
+def _version(headers: httpx.Headers) -> dict[str, str]:
+    return {"etag": headers.get("etag", ""), "last_modified": headers.get("last-modified", "")}
+
+
 def base_weight(request_type: str) -> int:
     if request_type in LIGHT_TYPES:
         return 2
@@ -98,15 +102,23 @@ class HyperliquidClient:
                 log.warning("%s failed (%s); retrying in %ss", request_type, exc, wait)
                 time.sleep(wait)
 
-    def _stats(self, url: str) -> Any:
+    def _stats(self, url: str) -> tuple[Any, dict[str, str]]:
+        """GET a stats-data file. Returns (payload, version), where version carries the file's
+        ETag and Last-Modified: the time the data was produced, not the time we fetched it."""
         resp = self.http.get(url, timeout=180.0)
         resp.raise_for_status()
-        return resp.json()
+        return resp.json(), _version(resp.headers)
 
-    def leaderboard(self) -> dict[str, Any]:
+    def stats_version(self, url: str) -> dict[str, str]:
+        """HEAD only: cheap check for whether a stats-data file changed."""
+        resp = self.http.head(url, timeout=30.0)
+        resp.raise_for_status()
+        return _version(resp.headers)
+
+    def leaderboard(self) -> tuple[dict[str, Any], dict[str, str]]:
         return self._stats(LEADERBOARD_URL)
 
-    def vaults(self) -> list[dict[str, Any]]:
+    def vaults(self) -> tuple[list[dict[str, Any]], dict[str, str]]:
         return self._stats(VAULTS_URL)
 
     def clearinghouse_state(self, user: str) -> dict[str, Any]:

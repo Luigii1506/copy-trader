@@ -14,10 +14,12 @@ from .storage import DATA_DIR, read_json, utcnow
 
 # Longest gap between scheduled runs (see scripts/install_launchd.sh) plus slack for run time.
 MAX_AGE = {
-    "leaderboard": timedelta(hours=26),  # daily
+    "leaderboard": timedelta(hours=3),   # hourly version check
     "wallets": timedelta(hours=10),      # longest gap 18:30 -> 02:30 = 8h
     "normalize": timedelta(hours=18),    # longest gap 04:15 -> 19:45 = 15.5h
 }
+# The source must keep publishing: no new leaderboard version stored for this long means it stopped.
+MAX_SNAPSHOT_AGE = timedelta(hours=30)
 MAX_WALLET_FAILURE_RATE = 0.10
 MIN_FREE_GB = 20
 
@@ -35,6 +37,13 @@ def check() -> list[tuple[str, str]]:
         age = now - datetime.fromisoformat(last["finished_at"])
         level = "OK" if age <= max_age else "FAIL"
         results.append((level, f"{job}: last finished {age.total_seconds() / 3600:.1f}h ago"))
+
+    board = read_json(DATA_DIR / "state" / "last_run_leaderboard.json", None)
+    if board and board.get("stored_at"):
+        age = now - datetime.fromisoformat(board["stored_at"])
+        level = "OK" if age <= MAX_SNAPSHOT_AGE else "FAIL"
+        results.append((level, f"leaderboard: newest stored snapshot is {age.total_seconds() / 3600:.1f}h old "
+                               f"(data as of {board.get('last_modified')})"))
 
     wallets = read_json(DATA_DIR / "state" / "last_run_wallets.json", None)
     if wallets:

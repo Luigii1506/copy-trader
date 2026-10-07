@@ -3,7 +3,7 @@
 # Full Disk Access) and registers its launchd jobs. Re-run after changing collector code.
 #
 # Schedule (local time), chosen to stay clear of brain-ops at 06:00 and 22:00:
-#   leaderboard  17:05            daily leaderboard snapshot (~00:05 UTC)
+#   leaderboard  every hour       checks for a new leaderboard version; stores at most one per 6h
 #   wallets      02:30 08:30 14:30 18:30
 #   normalize    04:15 19:45      raw JSON -> Parquet
 # Jobs run at low CPU/IO priority under caffeinate so the Mac doesn't idle-sleep mid-run.
@@ -19,10 +19,17 @@ uv tool install --reinstall --quiet "$REPO"
 BIN="$(command -v copy-trader || echo "$HOME/.local/bin/copy-trader")"
 mkdir -p "$DATA/logs" "$AGENTS"
 
-calendar() {  # "HH:MM HH:MM ..." -> StartCalendarInterval entries
+schedule() {  # "every=SECONDS" or "HH:MM HH:MM ..." -> launchd schedule keys
+  if [[ "$1" == every=* ]]; then
+    echo "    <key>StartInterval</key><integer>${1#every=}</integer>"
+    return
+  fi
+  echo "    <key>StartCalendarInterval</key>"
+  echo "    <array>"
   for t in "$@"; do
     echo "        <dict><key>Hour</key><integer>$((10#${t%:*}))</integer><key>Minute</key><integer>$((10#${t#*:}))</integer></dict>"
   done
+  echo "    </array>"
 }
 
 install_job() {
@@ -40,10 +47,7 @@ install_job() {
         <string>/usr/bin/caffeinate</string><string>-i</string>
         <string>$BIN</string><string>$job</string>
     </array>
-    <key>StartCalendarInterval</key>
-    <array>
-$(calendar "$@")
-    </array>
+$(schedule "$@")
     <key>EnvironmentVariables</key>
     <dict><key>COPY_TRADER_DATA</key><string>$DATA</string></dict>
     <key>WorkingDirectory</key><string>$DATA</string>
@@ -63,7 +67,7 @@ EOF
   echo "installed $label ($*)"
 }
 
-install_job leaderboard 17:05
+install_job leaderboard every=3600
 install_job wallets 02:30 08:30 14:30 18:30
 install_job normalize 04:15 19:45
 
