@@ -114,6 +114,13 @@ def test_fill_rows_flag_own_liquidations_and_builder_fees():
     assert [r["builder_fee"] for r in rows] == [0.01, None, None]
 
 
+def test_candle_rows():
+    record = {"fetched_at": "t", "request": {"coin": "BTC", "interval": "1d"},
+              "payload": [{"t": 1, "o": "1", "c": "2", "h": "3", "l": "0.5", "v": "9"}]}
+    [row] = normalize.candle_rows(record)
+    assert row["coin"] == "BTC" and row["close"] == 2.0 and row["volume"] == 9.0
+
+
 def test_vault_rows():
     record = {"fetched_at": "t", "payload": [{"apr": 0.04, "pnls": [], "summary": {
         "name": "HLP", "vaultAddress": "0xDFC", "leader": "0xABC", "tvl": "1000.5", "isClosed": False,
@@ -184,6 +191,10 @@ class FakeStatsClient:
     def vaults(self):
         return [], self.stats_version(None)
 
+    def candles(self, coin, interval):
+        self.candle_calls = getattr(self, "candle_calls", 0) + 1
+        return [{"t": 1, "T": 2, "s": coin, "i": interval, "o": "1", "c": "2", "h": "3", "l": "0.5", "v": "9", "n": 1}]
+
 
 def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, monkeypatch):
     from collector import sync
@@ -199,6 +210,7 @@ def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, 
     assert client.downloads == 2
     versions = (data_dir / "state" / "leaderboard_versions.jsonl").read_text().splitlines()
     assert [json.loads(v)["etag"] for v in versions] == ["v1", "v2"]
+    assert client.candle_calls == 2          # once per coin on the first run, then not for 20h
 
 
 def test_leaderboard_rows_carry_source_time():

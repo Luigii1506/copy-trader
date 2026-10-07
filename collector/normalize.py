@@ -10,6 +10,7 @@ Tables:
     equity_history     portfolio() account value / PnL series per period (repeats across runs; dedup when querying)
     vaults             one row per vault per vaults snapshot (Hyperliquid's native copy trading)
     equity_census      equity_history for every leaderboard trader (collector/census.py)
+    candles            daily OHLCV of benchmark coins (full history per snapshot; dedup on coin, interval, time_ms)
     fills              one row per fill (overlaps across runs; dedup on user, tid, oid when querying)
 
 A raw file is (re)processed when its Parquet is missing or older than it, and skipped while it is
@@ -40,7 +41,7 @@ PROCESSED_DIR = DATA_DIR / "processed" / PLATFORM
 SETTLE_SECONDS = 300
 # Bump whenever a row builder changes its columns or semantics: every processed table is then
 # rebuilt from raw on the next run, so old and new schemas never coexist.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 VERSION_FILE = PROCESSED_DIR / "SCHEMA_VERSION"
 
 Rows = list[dict[str, Any]]
@@ -156,6 +157,18 @@ def vault_rows(record: dict[str, Any]) -> Rows:
     return rows
 
 
+def candle_rows(record: dict[str, Any]) -> Rows:
+    req = record["request"]
+    return [{
+        "snapshot_at": record["fetched_at"],
+        "coin": req["coin"],
+        "interval": req["interval"],
+        "time_ms": c["t"],
+        "open": _f(c["o"]), "high": _f(c["h"]), "low": _f(c["l"]), "close": _f(c["c"]),
+        "volume": _f(c["v"]),
+    } for c in record["payload"]]
+
+
 def fill_rows(record: dict[str, Any]) -> Rows:
     return [{
         "user": record["request"]["user"],
@@ -187,6 +200,7 @@ TABLES: dict[str, list[tuple[str, Callable[[dict[str, Any]], Rows]]]] = {
     "portfolio_census": [("equity_census", equity_rows)],
     "fills": [("fills", fill_rows)],
     "vaults": [("vaults", vault_rows)],
+    "candles": [("candles", candle_rows)],
 }
 
 

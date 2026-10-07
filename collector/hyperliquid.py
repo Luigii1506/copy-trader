@@ -29,8 +29,9 @@ WEIGHT_PER_MINUTE = int(os.environ.get("COPY_TRADER_WEIGHT_PER_MINUTE", "1000"))
 
 # Documented weights. Everything not listed weighs 20.
 LIGHT_TYPES = {"l2Book", "allMids", "clearinghouseState", "orderStatus", "spotClearinghouseState", "exchangeStatus"}
-# These add 1 weight per 20 items returned.
+# These add 1 weight per 20 items returned (candleSnapshot: per 60).
 PER_ITEM_TYPES = {"userFills", "userFillsByTime", "historicalOrders", "userFunding", "fundingHistory"}
+PER_60_ITEM_TYPES = {"candleSnapshot"}
 
 FILLS_PAGE_SIZE = 2000  # documented max per userFillsByTime response
 
@@ -97,6 +98,8 @@ class HyperliquidClient:
                 data = resp.json()
                 if request_type in PER_ITEM_TYPES and isinstance(data, list):
                     self.limiter.charge(len(data) // 20)
+                elif request_type in PER_60_ITEM_TYPES and isinstance(data, list):
+                    self.limiter.charge(len(data) // 60)
                 return data
             except (httpx.TransportError, httpx.HTTPStatusError) as exc:
                 if attempt == retries - 1:
@@ -130,6 +133,12 @@ class HyperliquidClient:
         if dex:
             body["dex"] = dex
         return self.info(body)
+
+    def candles(self, coin: str, interval: str, start_ms: int = 0, end_ms: int | None = None) -> list[dict[str, Any]]:
+        """OHLCV candles. Docs: only the most recent 5000 are available (daily: back to 2020)."""
+        req = {"coin": coin, "interval": interval, "startTime": start_ms,
+               "endTime": end_ms if end_ms is not None else int(time.time() * 1000) + 86_400_000}
+        return self.info({"type": "candleSnapshot", "req": req})
 
     def perp_dexs(self) -> list[str]:
         """Names of all perp dexs, "" for the main one first."""

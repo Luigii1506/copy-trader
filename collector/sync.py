@@ -50,6 +50,8 @@ def fill_gap_suspected(start_ms: int, fills: list[dict]) -> bool:
 
 LEADERBOARD_VERSIONS_PATH = DATA_DIR / "state" / "leaderboard_versions.jsonl"
 MIN_SNAPSHOT_SPACING = timedelta(hours=6)
+BENCHMARK_COINS = ("BTC", "ETH")
+CANDLES_EVERY = timedelta(hours=20)
 
 
 def sync_leaderboard(client: HyperliquidClient) -> None:
@@ -84,6 +86,17 @@ def sync_leaderboard(client: HyperliquidClient) -> None:
         RawWriter("vaults", now).write(record)
         log.info("vaults: %d saved", len(vaults))
         state.update(etag=version["etag"], last_modified=version["last_modified"], stored_at=now.isoformat())
+
+    # Benchmark prices (Buy & Hold BTC/ETH): full daily history once a day, ~2 cheap calls.
+    candles_at = state.get("candles_at")
+    if candles_at is None or now - datetime.fromisoformat(candles_at) >= CANDLES_EVERY:
+        for coin in BENCHMARK_COINS:
+            fetched = utcnow()
+            candles = client.candles(coin, "1d")
+            RawWriter("candles", now).write(envelope("candles", {"type": "candleSnapshot", "coin": coin, "interval": "1d"},
+                                                     candles, fetched))
+            log.info("candles: %s 1d, %d saved", coin, len(candles))
+        state["candles_at"] = now.isoformat()
 
     state["finished_at"] = utcnow().isoformat()
     write_json(state_path, state)
