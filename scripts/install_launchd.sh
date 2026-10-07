@@ -45,7 +45,7 @@ schedule() {  # "manual", "always", "every=SECONDS" or "HH:MM HH:MM ..." -> laun
 
 # Share of the 1200/min API weight limit per job. Jobs can overlap, so the shares must add up
 # to less than 1200 (leaderboard and normalize don't use the weighted API).
-weight() { case "$1" in wallets) echo 450 ;; census) echo 400 ;; papertrade) echo 300 ;; *) echo 50 ;; esac; }
+weight() { case "$1" in wallets) echo 400 ;; census) echo 300 ;; papertrade) echo 300 ;; leaderboard) echo 200 ;; *) echo 0 ;; esac; }
 
 install_job() {
   local job="$1"; shift

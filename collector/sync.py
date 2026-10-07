@@ -52,7 +52,6 @@ def fill_gap_suspected(start_ms: int, fills: list[dict]) -> bool:
 
 LEADERBOARD_VERSIONS_PATH = DATA_DIR / "state" / "leaderboard_versions.jsonl"
 MIN_SNAPSHOT_SPACING = timedelta(hours=6)
-BENCHMARK_COINS = ("BTC", "ETH")
 CANDLES_EVERY = timedelta(hours=20)
 
 
@@ -89,19 +88,52 @@ def sync_leaderboard(client: HyperliquidClient) -> None:
         log.info("vaults: %d saved", len(vaults))
         state.update(etag=version["etag"], last_modified=version["last_modified"], stored_at=now.isoformat())
 
-    # Benchmark prices (Buy & Hold BTC/ETH): full daily history once a day, ~2 cheap calls.
+    # Daily candles for every perp coin once a day (benchmarks + accumulation track).
     candles_at = state.get("candles_at")
     if candles_at is None or now - datetime.fromisoformat(candles_at) >= CANDLES_EVERY:
-        for coin in BENCHMARK_COINS:
-            fetched = utcnow()
-            candles = client.candles(coin, "1d")
-            RawWriter("candles", now).write(envelope("candles", {"type": "candleSnapshot", "coin": coin, "interval": "1d"},
-                                                     candles, fetched))
-            log.info("candles: %s 1d, %d saved", coin, len(candles))
+        sync_candles(client)
         state["candles_at"] = now.isoformat()
 
     state["finished_at"] = utcnow().isoformat()
     write_json(state_path, state)
+
+
+CANDLES_CURSOR_PATH = DATA_DIR / "state" / "candles_cursor.json"
+DAY_MS = 86_400_000
+
+
+def sync_candles(client: HyperliquidClient) -> None:
+    """Daily 1d candles for every perp coin on every dex, incremental via a per-coin cursor.
+
+    Delisted coins are fetched too, on purpose: their histories are the graveyard an
+    accumulation study must see, or it only learns from survivors. First run pulls each
+    coin's full history (~90 min at this job's API budget); later runs refetch from one
+    day before the cursor (the still-forming candle) and dedup happens at normalize."""
+    cursors: dict[str, int] = read_json(CANDLES_CURSOR_PATH, {})
+    coins: list[str] = []
+    for dex in client.perp_dexs():
+        body = {"type": "meta"} | ({"dex": dex} if dex else {})
+        coins.extend(asset["name"] for asset in client.info(body)["universe"])
+    started = utcnow()
+    writer = RawWriter("candles", started)
+    fetched_count = rows = 0
+    for i, coin in enumerate(sorted(set(coins)), 1):
+        try:
+            start_ms = max(0, cursors.get(coin, 0) - DAY_MS)
+            candles = client.candles(coin, "1d", start_ms=start_ms)
+            if not candles:
+                continue
+            writer.write(envelope("candles", {"type": "candleSnapshot", "coin": coin, "interval": "1d"},
+                                  candles, utcnow()))
+            cursors[coin] = candles[-1]["t"]
+            fetched_count += 1
+            rows += len(candles)
+        except Exception:
+            log.exception("candles: %s failed; continuing", coin)
+        if i % 25 == 0:
+            write_json(CANDLES_CURSOR_PATH, cursors)
+    write_json(CANDLES_CURSOR_PATH, cursors)
+    log.info("candles: %d coins, %d rows", fetched_count, rows)
 
 
 def _log_version(version: dict[str, str], seen_at: datetime) -> None:

@@ -191,9 +191,19 @@ class FakeStatsClient:
     def vaults(self):
         return [], self.stats_version(None)
 
-    def candles(self, coin, interval):
+    def perp_dexs(self):
+        return ["", "xyz"]
+
+    def info(self, body):
+        assert body["type"] == "meta"
+        names = ["BTC", "OLD"] if not body.get("dex") else ["xyz:NVDA"]
+        return {"universe": [{"name": n, "isDelisted": n == "OLD"} for n in names]}
+
+    def candles(self, coin, interval, start_ms=0):
         self.candle_calls = getattr(self, "candle_calls", 0) + 1
-        return [{"t": 1, "T": 2, "s": coin, "i": interval, "o": "1", "c": "2", "h": "3", "l": "0.5", "v": "9", "n": 1}]
+        self.candle_starts = getattr(self, "candle_starts", {}) | {coin: start_ms}
+        return [{"t": 86_400_000 * 5, "T": 2, "s": coin, "i": interval, "o": "1", "c": "2", "h": "3",
+                 "l": "0.5", "v": "9", "n": 1}]
 
 
 def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, monkeypatch):
@@ -210,7 +220,14 @@ def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, 
     assert client.downloads == 2
     versions = (data_dir / "state" / "leaderboard_versions.jsonl").read_text().splitlines()
     assert [json.loads(v)["etag"] for v in versions] == ["v1", "v2"]
-    assert client.candle_calls == 2          # once per coin on the first run, then not for 20h
+    # Candles: every coin on every dex (delisted included) once on the first run, then not for 20h.
+    assert client.candle_calls == 3
+    cursors = json.loads((data_dir / "state" / "candles_cursor.json").read_text())
+    assert set(cursors) == {"BTC", "OLD", "xyz:NVDA"} and cursors["BTC"] == 86_400_000 * 5
+
+    from collector.sync import sync_candles
+    sync_candles(client)                     # incremental: refetch from one day before the cursor
+    assert client.candle_starts["BTC"] == 86_400_000 * 4
 
 
 def test_leaderboard_rows_carry_source_time():
