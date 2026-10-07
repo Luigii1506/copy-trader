@@ -39,9 +39,9 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 **Desarrollo nuevo**
 1. TraderScore v1: rendimiento + consistencia + comportamiento; con Deflated Sharpe y mínimo de operaciones.
 2. ~~Backtest de copy trading~~ hecho; falta correrlo con el censo completo y por cohortes (solo censo vs universo).
-3. Reglas de salida por comportamiento en el paper trading: leverage escalando, martingala, cambio de estilo → dejar de copiar.
+3. ~~Reglas de salida por comportamiento~~ hechas (`papertrade/watch.py`, ADR-002); umbrales por calibrar con la tabla `flags`.
 4. Risk engine y portafolio (secciones 27-28): correlación entre traders, exposición correlacionada, drawdown de portafolio, allocation por score.
-5. Realismo del simulador: tamaño mínimo de orden ($10) y decimales por moneda; posiciones no replicables con capital chico.
+5. ~~Realismo del simulador~~ hecho: lotes por `szDecimals`, mínimo de $10 por orden, objetivos no replicables registrados.
 6. Alertas al celular (Telegram / ntfy).
 7. Dashboard mínimo (sección 31).
 8. Descubrimiento vía Invo (dirección del builder → `builder_fills`).
@@ -49,9 +49,10 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 10. Ejecución real (fase 7), solo tras paper trading confirmado.
 
 **Mejoras**
-- Descargar fills también para los candidatos que salgan del censo (hoy solo 300 wallets).
-- Tracking error del paper trading (nuestro retorno vs el del trader copiado).
-- CI en GitHub Actions.
+- ~~Descargar fills de los traders seguidos~~ hecho (cohorte `papertrade` del universo). Falta: fills de los candidatos top del censo antes de seleccionarlos (hoy el vigilante solo ve a quien ya se copia).
+- Tracking error: ya se guarda el capital del trader junto al del libro (`book_equity`); falta el análisis.
+- ~~CI en GitHub Actions~~ hecho.
+- Calibrar los umbrales de las reglas de salida con los disparos registrados.
 
 ## Puntos de decisión
 
