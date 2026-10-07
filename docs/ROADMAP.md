@@ -16,11 +16,11 @@ Regla: **primero datos → análisis → simulación → automatización → din
 
 | Cuándo | Qué | Por qué |
 |---|---|---|
-| 2026-10-06 (en curso) | **Censo:** curvas de capital de ~43k traders del leaderboard, incluidos perdedores y quebrados (~22 h) | Responde la pregunta central en días, con poco sesgo de supervivencia |
+| 2026-10-06 (en curso) | **Censo:** curvas de capital de ~43k traders del leaderboard, incluidos perdedores y quebrados (~30 h: comparte la cuota de API con el paper trading) | Responde la pregunta central en días, con poco sesgo de supervivencia |
 | 2026-10-07 | **Primera respuesta seria de persistencia** con el censo parcial y luego completo | Decide si seguimos con TraderScore |
 | 2026-10-07 → 09 | Si hay señal: TraderScore v1 + **simulador de copy trading histórico** sobre el censo (fees, slippage, sizing) | La pregunta práctica: ¿cuánto habría ganado/perdido quien copiara? |
 | 2026-10-07 → 09 | Leer `state/leaderboard_versions.jsonl` y ajustar el espaciado de snapshots a la cadencia real | Ahora se guarda máx. 1 cada 6 h a ciegas |
-| 2026-10-06 → 07 | **Paper trading en rodaje** (shakedown) con un pool parcial | Encontrar bugs en vivo antes del arranque oficial |
+| 2026-10-06 17:45 PDT | **Paper trading en rodaje** (shakedown) con un pool parcial: 5 estrategias × 10 traders × $10k virtuales | Encontrar bugs en vivo antes del arranque oficial |
 | ~2026-10-07 (al terminar el censo) | **Arranque oficial del paper trading:** se reinicia la base con el pool completo (universo + censo) | Que la selección inicial no dependa de un pool a medio descargar |
 | cuando exista | TraderScore v1 entra como sexta estrategia | Se compara en vivo contra las demás y contra random |
 | 2026-10-13 | Primer resultado forward (horizonte 1 semana) | Confirmación sin look-ahead |
