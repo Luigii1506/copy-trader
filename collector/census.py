@@ -26,6 +26,8 @@ log = logging.getLogger(__name__)
 CENSUS_PATH = DATA_DIR / "state" / "census.json"
 MIN_ALLTIME_VOLUME = 10_000.0
 SAVE_EVERY = 50
+# A new raw file every N wallets: finished chunks can be normalized and analyzed while the census runs.
+CHUNK = 1_000
 
 
 def _latest_raw(dataset: str) -> dict[str, Any] | None:
@@ -79,6 +81,8 @@ def run(client: HyperliquidClient) -> None:
     t0, failures = time.monotonic(), 0
     for i in range(start, len(wallets)):
         user = wallets[i]
+        if i > start and i % CHUNK == 0:
+            writer = RawWriter("portfolio_census", utcnow())
         try:
             fetched = utcnow()
             writer.write(envelope("portfolio_census", {"type": "portfolio", "user": user},
