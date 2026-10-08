@@ -85,7 +85,8 @@ Pedido el 2026-10-07: un ranking para **acumular** cripto (y quizá acciones), s
 
 | Fuente | Qué mejoraría | Estado |
 |---|---|---|
-| **Vaults** (`vaultDetails`) | Copy trading nativo: depositar replica al líder exacto, sin fricción de copia; 229 vaults ≥ $10k | **Recolectando a diario** desde 2026-10-08 + estudio neto de comisión (`scripts/vault_study.py`) |
+| **Vaults** (`vaultDetails`) | Copy trading nativo: depositar replica al líder exacto, sin fricción de copia; 229 vaults ≥ $10k | Recolectando a diario. **Primer estudio: sin persistencia** (universo chico y sesgado); no son mejor vehículo con la evidencia actual. [research/2026-10-08-vaults-okx.md](research/2026-10-08-vaults-okx.md) |
+| **OKX Copy Trading** (API oficial pública) | Universo independiente para replicar | Recolectando a diario. **Sharpe mismo signo que en Hyperliquid, no significativo** (1 año); backtest dominado por supervivencia. Re-evaluar en 3-6 meses con las fotos diarias |
 | **S3 `hl-mainnet-node-data`** (todas las operaciones históricas) | Validar históricamente las penalizaciones de comportamiento y el costo de copiar; universo sin sesgo de supervivencia | **Pendiente de decisión del usuario**: requiere cuenta AWS y pago de transferencia (requester-pays); el tamaño no se puede medir sin credenciales |
 | Otros exchanges / analítica de pago | — | Descartadas: no verificables, o los mismos datos de Hyperliquid reempaquetados |
 
