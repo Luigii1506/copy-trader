@@ -90,6 +90,12 @@ Pedido el 2026-10-07: un ranking para **acumular** cripto (y quizá acciones), s
 | **S3 `hl-mainnet-node-data`** (todas las operaciones históricas) | Validar históricamente las penalizaciones de comportamiento y el costo de copiar; universo sin sesgo de supervivencia | **Pendiente de decisión del usuario**: requiere cuenta AWS y pago de transferencia (requester-pays); el tamaño no se puede medir sin credenciales |
 | Otros exchanges / analítica de pago | — | Descartadas: no verificables, o los mismos datos de Hyperliquid reempaquetados |
 
+## Estado 2026-10-08
+
+- **Evidencia:** persistencia replicada con 42k traders; Sharpe +48-54 %/año, beta 0 a BTC; TraderScore v1 falla (premia cuentas inactivas). Vaults sin señal; OKX consistente pero no significativo. Por qué solo funciona Sharpe: [research/2026-10-08-why-sharpe.md](research/2026-10-08-why-sharpe.md).
+- **v2 preparada e inactiva** (`STRATEGIES_V2`): Sharpe + exclusión de inactivos, liquidados, martingala y leverage extremo. Backtest 42k: +50 %/año, DD −17 %. Se activa solo tras el veredicto del 2026-12-01.
+- **Herramientas:** `copy-trader explain <trader>`, dashboard, tracking error perp vs perp.
+
 ## Congelamiento
 
 Parámetros de decisión congelados hasta el **2026-12-01** con criterio de éxito pre-registrado: [ADR-003](decisions/ADR-003-parameter-freeze.md). Prueba de familia de señales y multiplicidad: [research/2026-10-07-signal-family.md](research/2026-10-07-signal-family.md).
