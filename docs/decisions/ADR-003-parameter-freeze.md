@@ -23,6 +23,8 @@ Quedan **congelados hasta el 2026-12-01** (≥ 8 semanas de forward) los paráme
 
 **Candidatos anotados para v2 (no aplicar antes del 2026-12-01):** N=20 (dominó en riesgo), pesos sharpe+consistency 60/40 (mejor 2ª mitad, no elegible honestamente), pausa diaria 2 % (valor del plan).
 
+**Actualización 2026-10-08 (registrada antes de ver datos del forward):** con 41k traders el TraderScore v1 no se replicó (+5 % CAGR vs +28 % con 20k) mientras top_sharpe sí (+54 %, beta 0 a BTC). Candidato v2 principal: **selección por Sharpe, con comportamiento como filtro de exclusión** en vez de componente ponderado. Ver research/2026-10-08-census-replication.md. Nada cambia en vivo hasta el 2026-12-01.
+
 ## Criterio de éxito del forward (pre-registrado)
 
 Al 2026-12-01, sobre las ~8 semanas: `top_score` y/o `top_sharpe` con retorno > `random` y > 0, sin violar su kill switch, y tracking error medible. Si se cumple → fase de capital pequeño (sección 42 del plan). Si no → documentar y volver a investigación sin dinero real.
