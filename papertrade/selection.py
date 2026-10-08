@@ -16,7 +16,7 @@ import polars as pl
 from analysis.backtest import MAX_STEP_ABS_RET
 from analysis.behavior import behavior_features
 from analysis.persistence import formation_signals, period_returns
-from analysis.score import behavior_exclusions, score_from_signals
+from analysis.score import V2_MIN_STEP_VOL, behavior_exclusions, score_from_signals
 from collector.storage import DATA_DIR, PLATFORM
 
 from .config import LOOKBACK_WEEKS, MAX_FILLS_PER_DAY, MIN_TRADER_EQUITY, Strategy
@@ -95,7 +95,7 @@ def select(strategy: Strategy, candidates: pl.DataFrame, now: datetime) -> list[
         return [(u, 0.0) for u in rng.sample(users, min(strategy.n_traders, len(users)))]
     if strategy.signal == "sharpe_v2":
         # v2 candidate (inactive until ADR-003 ends): sharpe ranking, behavior only excludes.
-        candidates = candidates.filter(~pl.col("behavior_excluded"))
+        candidates = candidates.filter(~pl.col("behavior_excluded") & (pl.col("vol") >= V2_MIN_STEP_VOL))
         ranked = (candidates.filter(pl.col("sharpe").is_finite())
                   .sort("sharpe", descending=True).head(strategy.n_traders))
         return list(zip(ranked["user"].to_list(), ranked["sharpe"].to_list()))

@@ -140,6 +140,7 @@ def formation_signals(returns: pl.DataFrame, at: datetime, lookback_weeks: int,
         max_abs_ret=pl.col("ret").abs().max(),  # one step of +/-100% means ruin-level leverage
         ret=(1 + pl.col("ret")).product() - 1,
         sharpe=pl.col("ret").mean() / pl.col("ret").std(),
+        vol=pl.col("ret").std(),  # step volatility; near zero = an idle account (nothing to copy)
         low_dd=pl.col("dd").min(),  # max drawdown as a negative number: higher = shallower
         pnl_usd=pl.col("dpnl").sum(),
         consistency=(pl.col("ret") > 0).mean(),  # share of profitable steps

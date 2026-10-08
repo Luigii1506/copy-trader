@@ -25,6 +25,8 @@ Quedan **congelados hasta el 2026-12-01** (≥ 8 semanas de forward) los paráme
 
 **Actualización 2026-10-08 (registrada antes de ver datos del forward):** con 41k traders el TraderScore v1 no se replicó (+5 % CAGR vs +28 % con 20k) mientras top_sharpe sí (+54 %, beta 0 a BTC). Candidato v2 principal: **selección por Sharpe, con comportamiento como filtro de exclusión** en vez de componente ponderado. Ver research/2026-10-08-census-replication.md. Nada cambia en vivo hasta el 2026-12-01.
 
+**Actualización 2026-10-08 (b), también antes de datos del forward:** `copy-trader explain` mostró que el #1 del v1 es una cuenta inactiva (retorno 0 %, drawdown 0, 100 % pasos positivos); 3 de su top 10 lo son y el 34 % del pool es plano. Los componentes drawdown/consistencia/estabilidad premian la inactividad: es la causa mecánica de que el v1 no se replicara. v2 añade **exclusión de cuentas inactivas: volatilidad por paso < 0.2 %**. Implementado en `analysis/score.py` (`STRATEGIES_V2`, inactiva).
+
 ## Criterio de éxito del forward (pre-registrado)
 
 Al 2026-12-01, sobre las ~8 semanas: `top_score` y/o `top_sharpe` con retorno > `random` y > 0, sin violar su kill switch, y tracking error medible. Si se cumple → fase de capital pequeño (sección 42 del plan). Si no → documentar y volver a investigación sin dinero real.

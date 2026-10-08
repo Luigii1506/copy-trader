@@ -14,7 +14,7 @@ from analysis.score import behavior_exclusions, explain, score_from_signals, top
 
 def signals_frame():
     def row(user, sharpe, low_dd, consistency, n_obs=20, stability=-0.01, max_abs=0.3):
-        return {"user": user, "n_obs": n_obs, "max_abs_ret": max_abs, "ret": sharpe / 10,
+        return {"user": user, "n_obs": n_obs, "max_abs_ret": max_abs, "ret": sharpe / 10, "vol": 0.03,
                 "sharpe": sharpe, "low_dd": low_dd, "pnl_usd": 1_000.0,
                 "consistency": consistency, "stability": stability}
     return pl.DataFrame([
@@ -56,7 +56,7 @@ def test_penalized_star_falls_below_a_clean_mid_trader():
 
 def test_nan_sharpe_never_reaches_the_top():
     frame = pl.concat([signals_frame(), pl.DataFrame([{
-        "user": "flat", "n_obs": 20, "max_abs_ret": 0.0, "ret": 0.0, "sharpe": float("nan"),
+        "user": "flat", "n_obs": 20, "max_abs_ret": 0.0, "ret": 0.0, "vol": 0.0, "sharpe": float("nan"),
         "low_dd": 0.0, "pnl_usd": 0.0, "consistency": 0.0, "stability": 0.0}])])
     by = {r["user"]: r["trader_score"] for r in score_from_signals(frame).to_dicts()}
     assert by["flat"] < by["good"]          # NaN sharpe must not rank as the best sharpe
@@ -92,3 +92,12 @@ def test_v2_strategy_is_prepared_but_not_running():
     from papertrade.config import STRATEGIES, STRATEGIES_V2
     assert [s.name for s in STRATEGIES_V2] == ["sharpe_v2"]
     assert "sharpe_v2" not in [s.name for s in STRATEGIES]      # ADR-003 freeze
+
+
+def test_v2_excludes_idle_accounts_that_v1_rewards():
+    idle = pl.DataFrame([{"user": "idle", "n_obs": 6, "max_abs_ret": 0.0001, "ret": 0.0003, "vol": 0.00005,
+                          "sharpe": 5.0, "low_dd": 0.0, "pnl_usd": 1.0, "consistency": 1.0, "stability": 0.0}])
+    frame = pl.concat([signals_frame(), idle], how="diagonal_relaxed")
+    v1 = score_from_signals(frame).sort("trader_score", descending=True, nulls_last=True)["user"].to_list()
+    assert v1[0] == "idle"                                   # the v1 flaw, reproduced
+    assert "idle" not in top_by_sharpe_v2(3)(frame, None, 0)  # v2 removes it before ranking

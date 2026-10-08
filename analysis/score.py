@@ -104,6 +104,11 @@ def explain(scored: pl.DataFrame, user: str) -> dict:
 # Census replication (research/2026-10-08) showed sharpe alone carries the signal and the weighted
 # composite dilutes it. v2 ranks by sharpe and uses behavior only to EXCLUDE traders, never to
 # re-rank them. Unknown behavior (no fills yet) is not a reason to exclude.
+# Idle accounts: drawdown 0, every step positive, perfect stability - and nothing to copy. v1's
+# percentile components reward exactly that (3 of its live top 10 were idle on 2026-10-08; 34% of
+# the pool is flat). v2 excludes them before ranking. Pre-registered before forward data.
+V2_MIN_STEP_VOL = 0.002   # 0.2% per 2-week step
+
 V2_EXCLUDE = [
     ("liquidations", lambda c: pl.col(c) > 0),
     ("martingale_share", lambda c: pl.col(c) > 0.6),
@@ -131,6 +136,6 @@ def top_by_sharpe_v2(n: int, behavior: pl.DataFrame | None = None):
     def pick(signals: pl.DataFrame, at, seed: int) -> list[str]:
         s = behavior_exclusions(signals, behavior)
         return (s.filter(~pl.col("behavior_excluded") & (pl.col("max_abs_ret") <= MAX_STEP_ABS_RET)
-                         & pl.col("sharpe").is_finite())
+                         & pl.col("sharpe").is_finite() & (pl.col("vol") >= V2_MIN_STEP_VOL))
                 .sort("sharpe", descending=True).head(n)["user"].to_list())
     return pick
