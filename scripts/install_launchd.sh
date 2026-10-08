@@ -6,7 +6,7 @@
 #   leaderboard  every hour       checks for a new leaderboard version; stores at most one per 6h
 #   wallets      02:30 08:30 14:30 18:30
 #   normalize    4x/day, ~70 min after each wallets run   raw JSON -> Parquet (feeds the behavior watch)
-#   census       manual           one-off equity-history census (launchctl kickstart ...census)
+#   census       resumable        one-off equity-history census; restarts after reboot until complete
 #   papertrade   always           paper-trading engine (KeepAlive; see docs/decisions/ADR-002)
 #   dashboard    every 30 min     writes dashboard.html (no API use)
 # Jobs run at low CPU/IO priority under caffeinate so the Mac doesn't idle-sleep mid-run.
@@ -22,9 +22,13 @@ uv tool install --reinstall --quiet "$REPO"
 BIN="$(command -v copy-trader || echo "$HOME/.local/bin/copy-trader")"
 mkdir -p "$DATA/logs" "$AGENTS"
 
-schedule() {  # "manual", "always", "every=SECONDS" or "HH:MM HH:MM ..." -> launchd schedule keys
-  if [[ "$1" == manual ]]; then
-    return  # no schedule: started with launchctl kickstart
+schedule() {  # "resumable", "always", "every=SECONDS" or "HH:MM HH:MM ..." -> launchd schedule keys
+  if [[ "$1" == resumable ]]; then
+    # One-off job that saves its progress: starts at boot/login and is relaunched if it dies, but
+    # not after it finishes (exit 0). Learned 2026-10-07: a reboot left the census stopped for hours.
+    echo "    <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>"
+    echo "    <key>ThrottleInterval</key><integer>60</integer>"
+    return
   fi
   if [[ "$1" == always ]]; then  # long-running service, restarted by launchd if it exits
     echo "    <key>KeepAlive</key><true/>"
@@ -74,7 +78,7 @@ $(schedule "$@")
     <key>ProcessType</key><string>Background</string>
     <key>Nice</key><integer>10</integer>
     <key>LowPriorityIO</key><true/>
-    <key>RunAtLoad</key><$( [ "$1" = always ] && echo true || echo false )/>
+    <key>RunAtLoad</key><$( [ "$1" = always ] || [ "$1" = resumable ] && echo true || echo false )/>
 </dict>
 </plist>
 EOF
@@ -88,7 +92,7 @@ EOF
 install_job leaderboard every=3600
 install_job wallets 02:30 08:30 14:30 18:30
 install_job normalize 03:40 09:40 15:40 19:40
-install_job census manual
+install_job census resumable
 install_job papertrade always
 install_job dashboard every=1800
 
