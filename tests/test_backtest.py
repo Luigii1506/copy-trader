@@ -86,3 +86,29 @@ def test_turnover_counts_new_traders_per_rebalance():
     table = copy_backtest(returns_of(data), top_by("ret", 5), rebalance_cost=0.0)
     t = table["turnover"].drop_nulls()
     assert (t >= 0).all() and (t <= 1).all() and t[0] == 1.0  # first formation: everyone is new
+
+
+def test_trader_beta_separates_btc_exposure_from_skill():
+    from analysis.beta import trader_beta
+    weeks = 30
+    ends = [START + timedelta(weeks=w) for w in range(weeks)]
+    import random as _r
+    rng = _r.Random(3)
+    btc_rets = [rng.gauss(0.0, 0.05) for _ in range(weeks)]
+    closes, px = [], 100.0
+    for r in btc_rets:
+        px *= 1 + r
+        closes.append(px)
+    candles = pl.DataFrame({"snapshot_at": ["s"] * weeks, "coin": ["BTC"] * weeks,
+                            "time_ms": [int((e - timedelta(hours=1)).timestamp() * 1000) for e in ends],
+                            "close": closes})
+    step_btc = [closes[i] / closes[i - 1] - 1 for i in range(1, weeks)]
+    rows = []
+    for i, e in enumerate(ends[1:]):
+        rows.append({"user": "levered_btc", "end": e, "ret": 2.0 * step_btc[i]})
+        rows.append({"user": "skill", "end": e, "ret": 0.01 + rng.gauss(0, 0.01)})
+    returns = pl.DataFrame(rows).with_columns(pl.col("end").dt.cast_time_unit("ms"))
+    by = {r["user"]: r for r in trader_beta(returns, candles).to_dicts()}
+    assert by["levered_btc"]["beta"] == pytest.approx(2.0, abs=1e-6)
+    assert abs(by["levered_btc"]["alpha"]) < 1e-9
+    assert abs(by["skill"]["beta"]) < 0.3 and by["skill"]["alpha"] > 0.005

@@ -95,6 +95,7 @@ def round_trips(perp: pl.DataFrame) -> pl.DataFrame:
                 trade = {
                     "user": user, "coin": coin, "opened_ms": r["time_ms"], "closed_ms": None,
                     "side": "long" if signed > 0 else "short", "n_fills": 0, "n_adds": 0, "n_adds_losing": 0,
+                    "n_partial_exits": 0,
                     "initial_notional": abs(signed) * px, "max_notional": 0.0, "avg_entry": px,
                     "realized_pnl": 0.0, "fees": 0.0, "liquidated": False, "_abs_pos": 0.0,
                 }
@@ -109,6 +110,8 @@ def round_trips(perp: pl.DataFrame) -> pl.DataFrame:
                 trade["n_adds_losing"] += int(worse)
             if increasing:
                 trade["avg_entry"] = (trade["avg_entry"] * abs(start) + px * abs(signed)) / abs(after)
+            elif after != 0:
+                trade["n_partial_exits"] += 1    # scaling out: harder to mirror than one clean exit
             trade["max_notional"] = max(trade["max_notional"], abs(after) * px, abs(start) * px)
             if after == 0:
                 trade["closed_ms"] = r["time_ms"]
@@ -117,7 +120,8 @@ def round_trips(perp: pl.DataFrame) -> pl.DataFrame:
         if trade is not None:
             rows.append(trade)
     schema = {"user": pl.String, "coin": pl.String, "opened_ms": pl.Int64, "closed_ms": pl.Int64, "side": pl.String,
-              "n_fills": pl.Int64, "n_adds": pl.Int64, "n_adds_losing": pl.Int64, "initial_notional": pl.Float64,
+              "n_fills": pl.Int64, "n_adds": pl.Int64, "n_adds_losing": pl.Int64, "n_partial_exits": pl.Int64,
+              "initial_notional": pl.Float64,
               "max_notional": pl.Float64, "avg_entry": pl.Float64, "realized_pnl": pl.Float64, "fees": pl.Float64,
               "liquidated": pl.Boolean, "_abs_pos": pl.Float64}
     trades = pl.DataFrame(rows, schema=schema).drop("_abs_pos")
@@ -277,6 +281,30 @@ def _style_change(trades: pl.DataFrame, exposure: pl.DataFrame, now_ms: int, rec
     )
 
 
+# Copyability: how much of a trader's behavior a 60 s poller can reproduce at all.
+SUB_POLL_HOURS = 2 / 60       # opened and closed within ~one poll plus lag: we never see it
+SHORT_TRADE_HOURS = 0.25      # under 15 min: our late entry/exit dominates the trade's PnL
+
+
+def _copyability(trades: pl.DataFrame) -> pl.DataFrame:
+    """Ex-ante copyability from round trips (hypothesis to validate against measured tracking error).
+
+    copyability_estimate (0-100) = 100 x (1 - invisible share) x (1 - 0.5 x short share)
+                                   x 1 / (1 + 0.1 x median partial exits)
+    Pre-declared and deliberately simple: it is checked against papertrade's tracking-error
+    report before it may influence selection (not before ADR-003's freeze ends)."""
+    closed = trades.filter(pl.col("closed_ms").is_not_null())
+    return closed.group_by("user").agg(
+        invisible_share=(pl.col("duration_h") < SUB_POLL_HOURS).mean(),
+        short_trade_share=(pl.col("duration_h") < SHORT_TRADE_HOURS).mean(),
+        median_fills_per_trade=pl.col("n_fills").median(),
+        median_partial_exits=pl.col("n_partial_exits").median(),
+    ).with_columns(
+        copyability_estimate=100 * (1 - pl.col("invisible_share")) * (1 - 0.5 * pl.col("short_trade_share"))
+        / (1 + 0.1 * pl.col("median_partial_exits")),
+    )
+
+
 def behavior_features(fills: pl.DataFrame, equity: pl.DataFrame, now: datetime,
                       window_days: int = 90, recent_days: int = 30) -> pl.DataFrame:
     """One row per trader with the behavioral features over the last `window_days`.
@@ -302,6 +330,7 @@ def behavior_features(fills: pl.DataFrame, equity: pl.DataFrame, now: datetime,
         .join(_martingale(trades), on="user", how="left")
         .join(_leverage(exposure), on="user", how="left")
         .join(_style_change(trades, exposure, now_ms, recent_days), on="user", how="left")
+        .join(_copyability(trades), on="user", how="left")
         .with_columns(window_complete=pl.col("first_fill_ms") < start_ms)
     )
     return features.sort("user")

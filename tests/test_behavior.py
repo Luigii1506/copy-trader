@@ -170,3 +170,16 @@ def test_size_change_is_relative_to_equity():
                        "account_value": [1000.0, 4000.0, 4000.0], "pnl": [0.0, 0.0, 0.0]})
     feats = behavior_features(style_change_tape().frame(), eq, NOW).to_dicts()[0]
     assert feats["change_size"] == pytest.approx(1.0)
+
+
+def test_copyability_penalizes_invisible_and_fragmented_trades():
+    tape = Tape()
+    for _ in range(6):                        # scalper: in and out within a minute -> invisible to a 60 s poll
+        tape.fill("s", "BTC", 1, 100).fill("s", "BTC", -1, 100.1, hours=0.01)
+    for _ in range(6):                        # swing trader: holds for a day, exits in three slices
+        tape.fill("w", "ETH", 3, 100).fill("w", "ETH", -1, 101, hours=24).fill("w", "ETH", -1, 102).fill("w", "ETH", -1, 103)
+    eq = pl.concat([equity_curve("s", 1e6), equity_curve("w", 1e6)])
+    by = {r["user"]: r for r in behavior_features(tape.frame(), eq, NOW).to_dicts()}
+    assert by["s"]["invisible_share"] == 1.0 and by["s"]["copyability_estimate"] == 0.0
+    assert by["w"]["invisible_share"] == 0.0 and by["w"]["median_partial_exits"] == 2
+    assert by["w"]["copyability_estimate"] == pytest.approx(100 / 1.2)
