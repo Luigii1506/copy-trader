@@ -11,6 +11,7 @@
     python -m collector.sync papertrade-halt   # kill switch: close every paper position and stop
     python -m collector.sync dashboard     # write DATA_DIR/dashboard.html (plan section 31)
     python -m collector.sync papertrade-tracking   # copying cost: book vs copied trader (ADR-002)
+    python -m collector.sync explain 0x...         # why a trader ranks where they do (plan section 47)
 
 Installed as the `copy-trader` command (`uv tool install .`), which is what launchd runs.
 """
@@ -320,12 +321,19 @@ def job_lock(name: str) -> Iterator[bool]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hyperliquid raw data collector")
     parser.add_argument("job", choices=["leaderboard", "wallets", "all", "normalize", "health", "census",
-                                        "papertrade", "papertrade-status", "papertrade-halt", "papertrade-tracking", "dashboard"])
+                                        "papertrade", "papertrade-status", "papertrade-halt", "papertrade-tracking", "dashboard",
+                                        "explain"])
     parser.add_argument("--limit", type=int, help="only sync the first N tracked wallets (for testing)")
+    parser.add_argument("address", nargs="?", help="trader address (explain)")
     args = parser.parse_args()
 
     if args.job == "health":
         raise SystemExit(health.main())
+    if args.job == "explain":
+        if not args.address:
+            parser.error("explain needs an address: copy-trader explain 0x...")
+        from papertrade import explain
+        raise SystemExit(explain.main(args.address))
     if args.job == "papertrade-tracking":
         from papertrade import tracking
         raise SystemExit(tracking.main())

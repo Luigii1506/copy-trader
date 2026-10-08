@@ -305,3 +305,20 @@ def test_snapshots_carry_perp_pnl_not_spot_inclusive_pnl(setup):
     engine.step(T0)
     rows = store.db.execute("select trader_pnl, trader_perp_pnl from book_equity").fetchall()
     assert rows and all(r[0] == 50.0 and r[1] == 7.0 for r in rows)
+
+
+def test_explain_reports_components_and_unknown_traders(monkeypatch, tmp_path):
+    from papertrade import explain as ex_mod
+    pool = pl.DataFrame({"user": ["0xa", "0xb"], "account_value": [50_000.0, 20_000.0],
+                         "trader_score": [80.0, 60.0], "sharpe": [1.2, 0.4], "low_dd": [-0.05, -0.2],
+                         "consistency": [0.8, 0.5], "n_obs": [6, 6], "stability": [-0.01, -0.05],
+                         "ret": [0.3, 0.1], "behavior_known": [False, True], "behavior_penalty": [0.0, 15.0],
+                         "behavior_excluded": [False, True], "exclusion_reason": [None, "liquidations"]})
+    monkeypatch.setattr(ex_mod.selection, "candidate_signals", lambda now: pool)
+    monkeypatch.setattr(ex_mod.selection, "_read", lambda table: None)
+    monkeypatch.setattr(ex_mod, "DB_PATH", tmp_path / "none.db")
+    text = ex_mod.explain("0xA")
+    assert "puesto 1" in text and "Sharpe" in text and "sin fills" in text
+    text_b = ex_mod.explain("0xb")
+    assert "−15 pts" in text_b and "EXCLUIDO por liquidations" in text_b
+    assert "no está en el pool" in ex_mod.explain("0xzzz")

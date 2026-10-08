@@ -59,6 +59,8 @@ uv run pytest
 ```bash
 copy-trader papertrade-status    # equity, retorno, drawdown y leverage por estrategia
 copy-trader papertrade-halt      # kill switch: cierra todas las posiciones simuladas y detiene
+copy-trader papertrade-tracking  # costo de copiar: libro vs trader copiado (perp vs perp)
+copy-trader explain 0x...        # por qué un trader está donde está en el ranking
 ```
 
 Estado y auditoría en `~/data/copy-trader/papertrade/papertrade.db` (SQLite): tablas `strategies`, `books`, `positions`, `events` (cada operación con su motivo) y `equity`.

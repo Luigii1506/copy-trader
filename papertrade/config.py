@@ -29,6 +29,12 @@ STRATEGIES = [
     Strategy("top_score", "trader_score"),   # TraderScore v1 (analysis/score.py)
 ]
 
+# Prepared, NOT running (ADR-003 freeze until 2026-12-01). Enabling = appending to STRATEGIES
+# after the verdict, and recording that decision in ADR-003 first.
+STRATEGIES_V2 = [
+    Strategy("sharpe_v2", "sharpe_v2"),       # sharpe ranking + behavior exclusion filter
+]
+
 # Costs (Hyperliquid docs, 2026-10-06)
 TAKER_FEE = 0.00045          # base tier perps taker fee
 MIN_SLIPPAGE = 0.0002        # floor over mid when impact prices are tighter (2 bps)

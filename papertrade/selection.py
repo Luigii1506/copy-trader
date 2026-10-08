@@ -16,7 +16,7 @@ import polars as pl
 from analysis.backtest import MAX_STEP_ABS_RET
 from analysis.behavior import behavior_features
 from analysis.persistence import formation_signals, period_returns
-from analysis.score import score_from_signals
+from analysis.score import behavior_exclusions, score_from_signals
 from collector.storage import DATA_DIR, PLATFORM
 
 from .config import LOOKBACK_WEEKS, MAX_FILLS_PER_DAY, MIN_TRADER_EQUITY, Strategy
@@ -76,7 +76,7 @@ def candidate_signals(now: datetime) -> pl.DataFrame:
             behavior = behavior_features(fills, equity, now)
         except Exception:
             log.exception("behavior features failed; scoring without penalties")
-    pool = score_from_signals(pool, behavior)
+    pool = behavior_exclusions(score_from_signals(pool, behavior), behavior)
 
     board = _read("leaderboard")
     if board is not None:
@@ -93,6 +93,12 @@ def select(strategy: Strategy, candidates: pl.DataFrame, now: datetime) -> list[
         users = sorted(candidates["user"].to_list())
         rng = random.Random(f"{strategy.name}:{now:%Y-%m-%d}")
         return [(u, 0.0) for u in rng.sample(users, min(strategy.n_traders, len(users)))]
+    if strategy.signal == "sharpe_v2":
+        # v2 candidate (inactive until ADR-003 ends): sharpe ranking, behavior only excludes.
+        candidates = candidates.filter(~pl.col("behavior_excluded"))
+        ranked = (candidates.filter(pl.col("sharpe").is_finite())
+                  .sort("sharpe", descending=True).head(strategy.n_traders))
+        return list(zip(ranked["user"].to_list(), ranked["sharpe"].to_list()))
     if strategy.signal == "low_dd":
         # Shallow drawdowns only count with a positive return: a flat account has no drawdown either.
         candidates = candidates.filter(pl.col("ret") > 0)

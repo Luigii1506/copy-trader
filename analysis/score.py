@@ -98,3 +98,39 @@ def explain(scored: pl.DataFrame, user: str) -> dict:
         "behavior_known": r.get("behavior_known", False),
         "eligible": r["max_abs_ret"] <= MAX_STEP_ABS_RET,
     }
+
+
+# --- v2 candidate (ADR-003: prepared, NOT active before 2026-12-01) -------------------------------
+# Census replication (research/2026-10-08) showed sharpe alone carries the signal and the weighted
+# composite dilutes it. v2 ranks by sharpe and uses behavior only to EXCLUDE traders, never to
+# re-rank them. Unknown behavior (no fills yet) is not a reason to exclude.
+V2_EXCLUDE = [
+    ("liquidations", lambda c: pl.col(c) > 0),
+    ("martingale_share", lambda c: pl.col(c) > 0.6),
+    ("p95_leverage", lambda c: pl.col(c) > 15.0),
+]
+
+
+def behavior_exclusions(signals: pl.DataFrame, behavior: pl.DataFrame | None) -> pl.DataFrame:
+    """Adds `behavior_excluded` (bool) and `exclusion_reason` to a signals frame."""
+    if behavior is None or behavior.is_empty():
+        return signals.with_columns(behavior_excluded=pl.lit(False), exclusion_reason=pl.lit(None, pl.String))
+    cols = [c for c, _ in V2_EXCLUDE if c in behavior.columns]
+    joined = signals.join(behavior.select(["user", *cols]).rename({c: f"_b_{c}" for c in cols}), on="user", how="left")
+    reason = pl.lit(None, pl.String)
+    for c, cond in reversed(V2_EXCLUDE):
+        if c in cols:
+            reason = pl.when(cond(f"_b_{c}").fill_null(False)).then(pl.lit(c)).otherwise(reason)
+    return (joined.with_columns(exclusion_reason=reason)
+            .with_columns(behavior_excluded=pl.col("exclusion_reason").is_not_null())
+            .drop([f"_b_{c}" for c in cols]))
+
+
+def top_by_sharpe_v2(n: int, behavior: pl.DataFrame | None = None):
+    """Backtest selector for the v2 candidate: eligible, not behavior-excluded, top n by sharpe."""
+    def pick(signals: pl.DataFrame, at, seed: int) -> list[str]:
+        s = behavior_exclusions(signals, behavior)
+        return (s.filter(~pl.col("behavior_excluded") & (pl.col("max_abs_ret") <= MAX_STEP_ABS_RET)
+                         & pl.col("sharpe").is_finite())
+                .sort("sharpe", descending=True).head(n)["user"].to_list())
+    return pick

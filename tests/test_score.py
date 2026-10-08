@@ -9,7 +9,7 @@ from test_persistence import equity_from_returns, world  # noqa: E402
 
 from analysis.backtest import copy_backtest, random_baseline, summarize_backtest
 from analysis.persistence import period_returns
-from analysis.score import explain, score_from_signals, top_by_score
+from analysis.score import behavior_exclusions, explain, score_from_signals, top_by_score, top_by_sharpe_v2
 
 
 def signals_frame():
@@ -77,3 +77,18 @@ def test_walk_forward_score_beats_random_in_a_skilled_world():
     score_run = summarize_backtest(copy_backtest(returns, top_by_score(10), **kw))
     rnd = random_baseline(returns, 10, seeds=8, **kw)
     assert score_run["total_return"] > rnd["total_return"].quantile(0.9)
+
+
+def test_v2_excludes_by_behavior_and_ranks_by_sharpe():
+    behavior = pl.DataFrame({"user": ["good", "mid"], "liquidations": [0, 3],
+                             "martingale_share": [0.1, 0.1], "p95_leverage": [3.0, 3.0]})
+    flagged = {r["user"]: r["exclusion_reason"] for r in behavior_exclusions(signals_frame(), behavior).to_dicts()}
+    assert flagged == {"good": None, "mid": "liquidations", "bad": None, "levered": None}
+    # mid is excluded (liquidated), levered is ineligible (max_abs_ret), unknown-behavior 'bad' stays.
+    assert top_by_sharpe_v2(3, behavior)(signals_frame(), None, 0) == ["good", "bad"]
+
+
+def test_v2_strategy_is_prepared_but_not_running():
+    from papertrade.config import STRATEGIES, STRATEGIES_V2
+    assert [s.name for s in STRATEGIES_V2] == ["sharpe_v2"]
+    assert "sharpe_v2" not in [s.name for s in STRATEGIES]      # ADR-003 freeze
