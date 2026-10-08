@@ -51,6 +51,7 @@ class TraderView:
     dexs: set[str] = field(default_factory=lambda: {""})          # dexs where they hold positions
     equity: float | None = None                                   # total account value (portfolio)
     pnl: float | None = None                                      # cumulative all-time PnL (portfolio)
+    perp_pnl: float | None = None                                 # cumulative perp-only PnL: what we copy
     equity_at: datetime | None = None
     scanned_at: datetime | None = None
     ok: bool = False                                              # this step's data is complete
@@ -107,11 +108,14 @@ class Engine:
             # Stagger the first refresh of each trader so the heavy calls don't all land on one step.
             view.scanned_at = now - (random.random() * DEX_RESCAN if first else timedelta(0))
         if first or now - view.equity_at >= EQUITY_REFRESH:
-            all_time = dict(self.client.portfolio(trader))["allTime"]
+            periods = dict(self.client.portfolio(trader))
+            all_time = periods["allTime"]
             history = all_time["accountValueHistory"]
             pnl_history = all_time.get("pnlHistory") or []
+            perp_history = (periods.get("perpAllTime") or {}).get("pnlHistory") or []
             view.equity = float(history[-1][1]) if history else 0.0
             view.pnl = float(pnl_history[-1][1]) if pnl_history else None
+            view.perp_pnl = float(perp_history[-1][1]) if perp_history else None
             view.equity_at = now - (random.random() * EQUITY_REFRESH if first else timedelta(0))
         view.sizes = sizes
         view.ok = True
@@ -358,7 +362,8 @@ class Engine:
             for book_id, b in open_books:
                 view = self.traders.get(b.trader)
                 self.store.snapshot_book(now, book_id, b.equity(markets), b.gross(markets),
-                                         view.equity if view else None, view.pnl if view else None)
+                                         view.equity if view else None, view.pnl if view else None,
+                                         view.perp_pnl if view else None)
             books = [b for _, b in open_books]
             equity = row["cash_pool"] + sum(b.equity(markets) for b in books)
             gross = sum(b.gross(markets) for b in books)

@@ -64,7 +64,8 @@ create table if not exists book_equity (
     equity real not null,
     gross real not null,
     trader_equity real,                 -- the copied trader's total account value at the same time
-    trader_pnl real,                    -- the trader's cumulative all-time PnL (clean of deposits)
+    trader_pnl real,                    -- the trader's cumulative all-time PnL (includes spot)
+    trader_perp_pnl real,               -- the trader's cumulative perp PnL: what the book copies
     primary key (ts, book_id)
 );
 create table if not exists flags (
@@ -95,10 +96,14 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("pragma journal_mode=wal")
         self.db.executescript(SCHEMA)
-        try:  # 2026-10-07: trader cumulative PnL next to their equity (tracking error needs flows out)
-            self.db.execute("alter table book_equity add column trader_pnl real")
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        # Migrations, each idempotent. 2026-10-07: trader cumulative PnL next to their equity.
+        # 2026-10-08: perp-only PnL - allTime PnL includes spot holdings we never copy, which made
+        # books look like they "beat" traders whose losses were really spot tokens falling.
+        for column in ("trader_pnl", "trader_perp_pnl"):
+            try:
+                self.db.execute(f"alter table book_equity add column {column} real")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     def close(self) -> None:
         self.db.close()
@@ -184,11 +189,15 @@ class Store:
         return {r["trader"]: r["rule"] for r in rows}
 
     def snapshot_book(self, now: datetime, book_id: int, equity: float, gross: float,
-                      trader_equity: float | None, trader_pnl: float | None = None) -> None:
+                      trader_equity: float | None, trader_pnl: float | None = None,
+                      trader_perp_pnl: float | None = None) -> None:
         """Per-book curve next to the trader's own: the tracking error of copying is their difference.
-        trader_pnl (cumulative) is the clean side: equity alone moves with deposits and withdrawals."""
-        self.db.execute("insert or replace into book_equity values (?, ?, ?, ?, ?, ?)",
-                        (now.isoformat(), book_id, equity, gross, trader_equity, trader_pnl))
+        trader_perp_pnl (cumulative, perps only) is the comparable side: equity moves with deposits,
+        and all-time PnL includes spot holdings the book never mirrors."""
+        self.db.execute(
+            "insert or replace into book_equity(ts, book_id, equity, gross, trader_equity, trader_pnl, trader_perp_pnl) "
+            "values (?, ?, ?, ?, ?, ?, ?)",
+            (now.isoformat(), book_id, equity, gross, trader_equity, trader_pnl, trader_perp_pnl))
 
     def commit(self) -> None:
         self.db.commit()

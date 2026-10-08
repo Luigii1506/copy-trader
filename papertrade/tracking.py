@@ -3,13 +3,14 @@
 For every book, its equity snapshots sit next to the copied trader's cumulative PnL and equity
 at the same moments. Per hourly step:
 
-    trader return = dPnL / trader_equity_at_start     (PnL diffs: deposits and withdrawals out)
+    trader return = dPerpPnL / trader_equity_at_start (perp PnL diffs: deposits and spot out)
     book return   = dEquity / book_equity_at_start
 
 Their running difference is the cost of mirroring: polling lag, our taker fees vs their maker
 fills and volume discounts, funding timing, and slices too small to replicate. This number is
 what turns backtest returns into live expectations, and it calibrates the backtest's
-`friction_per_step`. Snapshots from before 2026-10-07 lack trader_pnl and are skipped.
+`friction_per_step`. Only snapshots with trader_perp_pnl count (captured from 2026-10-08):
+the earlier all-time PnL included spot tokens the book never holds.
 """
 
 from __future__ import annotations
@@ -20,9 +21,10 @@ from .store import DB_PATH, Store
 def report(store: Store) -> list[dict]:
     """One row per book with enough clean history: compounded returns and the tracking gap."""
     rows = store.db.execute("""
-        select b.id book_id, b.strategy, b.trader, e.ts, e.equity, e.trader_equity, e.trader_pnl
+        select b.id book_id, b.strategy, b.trader, e.ts, e.equity, e.trader_equity,
+               e.trader_perp_pnl trader_pnl
         from book_equity e join books b on b.id = e.book_id
-        where e.trader_pnl is not null and e.trader_equity > 0 and e.equity > 0
+        where e.trader_perp_pnl is not null and e.trader_equity > 0 and e.equity > 0
         order by b.id, e.ts""").fetchall()
     series: dict[int, list] = {}
     for r in rows:
@@ -65,7 +67,7 @@ def main() -> int:
     finally:
         store.close()
     if not rows:
-        print("aún no hay historia limpia (trader_pnl se captura desde 2026-10-07); reintenta en unos días")
+        print("aún no hay historia limpia (PnL de perps del trader se captura desde 2026-10-08); reintenta en unos días")
         return 0
     print(f"{'estrategia':16} {'trader':14} {'horas':>5} {'libro':>8} {'trader':>8} {'brecha':>8} {'brecha/día':>10}")
     for r in rows:

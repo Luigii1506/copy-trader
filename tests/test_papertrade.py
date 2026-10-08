@@ -88,7 +88,8 @@ class FakeExchange:
         return {"assetPositions": [{"position": {"coin": c, "szi": str(s)}} for c, s in held.items()]}
 
     def portfolio(self, user):
-        return [["allTime", {"accountValueHistory": [[1, str(self.equity[user])]]}]]
+        return [["allTime", {"accountValueHistory": [[1, str(self.equity[user])]], "pnlHistory": [[1, "50"]]}],
+                ["perpAllTime", {"accountValueHistory": [[1, str(self.equity[user])]], "pnlHistory": [[1, "7"]]}]]
 
 
 @pytest.fixture
@@ -281,7 +282,8 @@ def test_tracking_report_measures_the_copying_gap(setup):
     for h in range(6):
         store.snapshot_book(T0 + timedelta(hours=h), book_id,
                             equity=3_000.0 * (1.009 ** h), gross=6_000.0,
-                            trader_equity=1_000.0, trader_pnl=10.0 * h)
+                            trader_equity=1_000.0, trader_pnl=999.0 * h,   # spot noise: must be ignored
+                            trader_perp_pnl=10.0 * h)
     store.commit()
     [row] = [r for r in tracking.report(store) if r["trader"] == "0xa"]
     assert row["hours"] == 5
@@ -296,3 +298,10 @@ def test_tracking_skips_rows_without_trader_pnl(setup):
     engine.step(T0)                                                   # engine snapshots carry pnl=None? (fake)
     store.commit()
     assert all(r["hours"] >= 3 for r in tracking.report(store))
+
+
+def test_snapshots_carry_perp_pnl_not_spot_inclusive_pnl(setup):
+    engine, ex, store = setup
+    engine.step(T0)
+    rows = store.db.execute("select trader_pnl, trader_perp_pnl from book_equity").fetchall()
+    assert rows and all(r[0] == 50.0 and r[1] == 7.0 for r in rows)
