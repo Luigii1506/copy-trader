@@ -10,7 +10,9 @@ Tables:
     equity_history     portfolio() account value / PnL series per period (repeats across runs; dedup when querying)
     vaults             one row per vault per vaults snapshot (Hyperliquid's native copy trading)
     equity_census      equity_history for every leaderboard trader (collector/census.py)
-    candles            daily OHLCV of benchmark coins (full history per snapshot; dedup on coin, interval, time_ms)
+    candles            daily OHLCV of every perp coin (dedup on coin, interval, time_ms)
+    vault_meta         one row per tracked vault per daily snapshot (commission, leader stake, followers)
+    vault_equity       vault portfolio histories, equity_history shape (dedup on user, period, time_ms)
     fills              one row per fill (overlaps across runs; dedup on user, tid, oid when querying)
 
 A raw file is (re)processed when its Parquet is missing or older than it, and skipped while it is
@@ -41,7 +43,7 @@ PROCESSED_DIR = DATA_DIR / "processed" / PLATFORM
 SETTLE_SECONDS = 300
 # Bump whenever a row builder changes its columns or semantics: every processed table is then
 # rebuilt from raw on the next run, so old and new schemas never coexist.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 VERSION_FILE = PROCESSED_DIR / "SCHEMA_VERSION"
 
 Rows = list[dict[str, Any]]
@@ -169,6 +171,35 @@ def candle_rows(record: dict[str, Any]) -> Rows:
     } for c in record["payload"]]
 
 
+def vault_detail_rows(record: dict[str, Any]) -> Rows:
+    """One row per vault per snapshot: terms that decide what a depositor actually earns."""
+    d = record["payload"]
+    if not d:
+        return []
+    return [{
+        "snapshot_at": record["fetched_at"],
+        "vault_address": record["request"]["vaultAddress"].lower(),
+        "name": d.get("name"),
+        "leader": (d.get("leader") or "").lower(),
+        "leader_commission": _f(d.get("leaderCommission")),   # share of depositor profits
+        "leader_fraction": _f(d.get("leaderFraction")),       # leader's own stake in the vault
+        "followers": len(d.get("followers") or []),
+        "apr": _f(d.get("apr")),
+        "is_closed": d.get("isClosed"),
+        "allow_deposits": d.get("allowDeposits"),
+        "always_close_on_withdraw": d.get("alwaysCloseOnWithdraw"),
+    }]
+
+
+def vault_equity_rows(record: dict[str, Any]) -> Rows:
+    """The vault's portfolio history in the equity_history shape (user = vault address)."""
+    d = record["payload"]
+    if not d or not d.get("portfolio"):
+        return []
+    as_portfolio = {"request": {"user": record["request"]["vaultAddress"].lower()}, "payload": d["portfolio"]}
+    return equity_rows(as_portfolio)
+
+
 def fill_rows(record: dict[str, Any]) -> Rows:
     return [{
         "user": record["request"]["user"],
@@ -201,6 +232,7 @@ TABLES: dict[str, list[tuple[str, Callable[[dict[str, Any]], Rows]]]] = {
     "fills": [("fills", fill_rows)],
     "vaults": [("vaults", vault_rows)],
     "candles": [("candles", candle_rows)],
+    "vault_details": [("vault_meta", vault_detail_rows), ("vault_equity", vault_equity_rows)],
 }
 
 

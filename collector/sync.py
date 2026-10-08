@@ -95,8 +95,43 @@ def sync_leaderboard(client: HyperliquidClient) -> None:
         sync_candles(client)
         state["candles_at"] = now.isoformat()
 
+    # Daily vault details (native copy trading: depositing replicates the leader exactly).
+    vaults_at = state.get("vault_details_at")
+    if vaults_at is None or now - datetime.fromisoformat(vaults_at) >= CANDLES_EVERY:
+        sync_vault_details(client)
+        state["vault_details_at"] = now.isoformat()
+
     state["finished_at"] = utcnow().isoformat()
     write_json(state_path, state)
+
+
+VAULT_UNIVERSE_PATH = DATA_DIR / "universe" / "vaults.json"
+VAULT_MIN_TVL = 10_000.0
+
+
+def sync_vault_details(client: HyperliquidClient) -> None:
+    """vaultDetails (portfolio history, commission, followers) for every open vault with TVL >=
+    VAULT_MIN_TVL, plus every vault ever tracked: the list is append-only, so vaults that later
+    shrink or close stay in the study instead of silently becoming survivors-only data."""
+    now = utcnow()
+    tracked: dict[str, str] = read_json(VAULT_UNIVERSE_PATH, {})
+    listing, _ = client.vaults()
+    for v in listing:
+        s = v["summary"]
+        if not s["isClosed"] and float(s["tvl"]) >= VAULT_MIN_TVL:
+            tracked.setdefault(s["vaultAddress"].lower(), now.isoformat())
+    write_json(VAULT_UNIVERSE_PATH, tracked)
+    writer = RawWriter("vault_details", now)
+    saved = 0
+    for address in sorted(tracked):
+        try:
+            details = client.info({"type": "vaultDetails", "vaultAddress": address})
+            writer.write(envelope("vault_details", {"type": "vaultDetails", "vaultAddress": address},
+                                  details, utcnow()))
+            saved += 1
+        except Exception:
+            log.exception("vault %s failed; continuing", address)
+    log.info("vault details: %d of %d tracked vaults saved", saved, len(tracked))
 
 
 CANDLES_CURSOR_PATH = DATA_DIR / "state" / "candles_cursor.json"

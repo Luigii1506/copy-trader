@@ -189,12 +189,19 @@ class FakeStatsClient:
         return board, self.stats_version(None)
 
     def vaults(self):
-        return [], self.stats_version(None)
+        listing = [{"summary": {"vaultAddress": "0xBIG", "isClosed": False, "tvl": "50000"}},
+                   {"summary": {"vaultAddress": "0xtiny", "isClosed": False, "tvl": "50"}}]
+        return listing, self.stats_version(None)
 
     def perp_dexs(self):
         return ["", "xyz"]
 
     def info(self, body):
+        if body["type"] == "vaultDetails":
+            self.vault_calls = getattr(self, "vault_calls", []) + [body["vaultAddress"]]
+            return {"name": "v", "leader": "0xL", "leaderCommission": 0.1, "leaderFraction": 0.2,
+                    "followers": [{}, {}], "portfolio": [["allTime", {"accountValueHistory": [[1, "10"]],
+                                                                      "pnlHistory": [[1, "0"]], "vlm": "0"}]]}
         assert body["type"] == "meta"
         names = ["BTC", "OLD"] if not body.get("dex") else ["xyz:NVDA"]
         return {"universe": [{"name": n, "isDelisted": n == "OLD"} for n in names]}
@@ -228,6 +235,21 @@ def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, 
     from collector.sync import sync_candles
     sync_candles(client)                     # incremental: refetch from one day before the cursor
     assert client.candle_starts["BTC"] == 86_400_000 * 4
+    # Vault details: only vaults over the TVL floor, and the tracked list never shrinks.
+    assert client.vault_calls == ["0xbig"]
+    assert json.loads((data_dir / "universe" / "vaults.json").read_text()).keys() == {"0xbig"}
+
+
+def test_vault_detail_rows_and_equity():
+    record = {"fetched_at": "t", "request": {"vaultAddress": "0xVAULT"},
+              "payload": {"name": "v", "leader": "0xL", "leaderCommission": 0.1, "leaderFraction": 0.25,
+                          "followers": [{}, {}, {}], "apr": 0.3, "isClosed": False, "allowDeposits": True,
+                          "portfolio": [["allTime", {"accountValueHistory": [[1, "100"], [2, "110"]],
+                                                     "pnlHistory": [[1, "0"], [2, "10"]], "vlm": "0"}]]}}
+    [meta] = normalize.vault_detail_rows(record)
+    assert meta["vault_address"] == "0xvault" and meta["leader_commission"] == 0.1 and meta["followers"] == 3
+    rows = normalize.vault_equity_rows(record)
+    assert [(r["user"], r["time_ms"], r["pnl"]) for r in rows] == [("0xvault", 1, 0.0), ("0xvault", 2, 10.0)]
 
 
 def test_leaderboard_rows_carry_source_time():
