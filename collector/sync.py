@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from . import census, health, normalize, universe
+from . import census, health, normalize, okx, universe
 from .hyperliquid import LEADERBOARD_URL, VAULTS_URL, HyperliquidClient
 from .storage import DATA_DIR, RawWriter, envelope, read_json, utcnow, write_json
 
@@ -100,6 +100,15 @@ def sync_leaderboard(client: HyperliquidClient) -> None:
     if vaults_at is None or now - datetime.fromisoformat(vaults_at) >= CANDLES_EVERY:
         sync_vault_details(client)
         state["vault_details_at"] = now.isoformat()
+
+    # Daily OKX lead traders (independent universe; a failure there must not stop Hyperliquid).
+    okx_at = state.get("okx_at")
+    if okx_at is None or now - datetime.fromisoformat(okx_at) >= CANDLES_EVERY:
+        try:
+            okx.sync_okx()
+            state["okx_at"] = now.isoformat()
+        except Exception:
+            log.exception("okx sync failed; retrying next run")
 
     state["finished_at"] = utcnow().isoformat()
     write_json(state_path, state)

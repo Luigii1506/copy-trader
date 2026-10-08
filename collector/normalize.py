@@ -13,6 +13,8 @@ Tables:
     candles            daily OHLCV of every perp coin (dedup on coin, interval, time_ms)
     vault_meta         one row per tracked vault per daily snapshot (commission, leader stake, followers)
     vault_equity       vault portfolio histories, equity_history shape (dedup on user, period, time_ms)
+    okx_traders        OKX copy-trading lead traders per daily snapshot (independent universe)
+    okx_pnl            OKX daily accumulated pnl/pnl ratio, 365 days per snapshot (dedup on user, time_ms)
     fills              one row per fill (overlaps across runs; dedup on user, tid, oid when querying)
 
 A raw file is (re)processed when its Parquet is missing or older than it, and skipped while it is
@@ -43,7 +45,7 @@ PROCESSED_DIR = DATA_DIR / "processed" / PLATFORM
 SETTLE_SECONDS = 300
 # Bump whenever a row builder changes its columns or semantics: every processed table is then
 # rebuilt from raw on the next run, so old and new schemas never coexist.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 VERSION_FILE = PROCESSED_DIR / "SCHEMA_VERSION"
 
 Rows = list[dict[str, Any]]
@@ -200,6 +202,36 @@ def vault_equity_rows(record: dict[str, Any]) -> Rows:
     return equity_rows(as_portfolio)
 
 
+def okx_trader_rows(record: dict[str, Any]) -> Rows:
+    rows = []
+    for page in record["payload"]:
+        for r in page.get("ranks", []):
+            rows.append({
+                "snapshot_at": record["fetched_at"],
+                "data_ver": page.get("dataVer"),
+                "user": r["uniqueCode"],
+                "nickname": r.get("nickName"),
+                "aum": _f(r.get("aum")),
+                "pnl": _f(r.get("pnl")),
+                "pnl_ratio": _f(r.get("pnlRatio")),
+                "win_ratio": _f(r.get("winRatio")),
+                "lead_days": int(r["leadDays"]) if r.get("leadDays") else None,
+                "copy_traders": int(r["copyTraderNum"]) if r.get("copyTraderNum") else None,
+                "n_instruments": len(r.get("traderInsts") or []),
+            })
+    return rows
+
+
+def okx_pnl_rows(record: dict[str, Any]) -> Rows:
+    """Daily accumulated pnl and pnl ratio (OKX-computed) over the last 365 days."""
+    return [{
+        "user": record["request"]["uniqueCode"],
+        "time_ms": int(p["beginTs"]),
+        "pnl": _f(p["pnl"]),
+        "pnl_ratio": _f(p["pnlRatio"]),
+    } for p in record["payload"]]
+
+
 def fill_rows(record: dict[str, Any]) -> Rows:
     return [{
         "user": record["request"]["user"],
@@ -233,6 +265,8 @@ TABLES: dict[str, list[tuple[str, Callable[[dict[str, Any]], Rows]]]] = {
     "vaults": [("vaults", vault_rows)],
     "candles": [("candles", candle_rows)],
     "vault_details": [("vault_meta", vault_detail_rows), ("vault_equity", vault_equity_rows)],
+    "okx_lead_traders": [("okx_traders", okx_trader_rows)],
+    "okx_pnl": [("okx_pnl", okx_pnl_rows)],
 }
 
 

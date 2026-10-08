@@ -215,6 +215,8 @@ class FakeStatsClient:
 
 def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, monkeypatch):
     from collector import sync
+    okx_runs = []
+    monkeypatch.setattr(sync.okx, "sync_okx", lambda: okx_runs.append(1))   # never touch the network
     client = FakeStatsClient()
     sync.sync_leaderboard(client)
     sync.sync_leaderboard(client)  # same ETag -> no download
@@ -237,6 +239,7 @@ def test_leaderboard_downloads_only_new_versions_and_respects_spacing(data_dir, 
     assert client.candle_starts["BTC"] == 86_400_000 * 4
     # Vault details: only vaults over the TVL floor, and the tracked list never shrinks.
     assert client.vault_calls == ["0xbig"]
+    assert okx_runs == [1]                   # OKX daily sync ran once in the first run
     assert json.loads((data_dir / "universe" / "vaults.json").read_text()).keys() == {"0xbig"}
 
 
@@ -322,3 +325,39 @@ def test_candidate_funnel_adds_top_scored_wallets(data_dir, monkeypatch):
     monkeypatch.setattr("papertrade.selection.candidate_signals",
                         lambda now: (_ for _ in ()).throw(RuntimeError("no data")))
     assert sync.candidate_wallets() == []     # the funnel must never break the wallets job
+
+
+class FakeOkx:
+    def __init__(self):
+        self.calls = []
+
+    def get(self, path, params, retries=4):
+        self.calls.append((path, params.get("page") or params.get("uniqueCode")))
+        if path == "public-lead-traders":
+            page = int(params["page"])
+            ranks = [{"uniqueCode": f"C{page}{i}", "nickName": "n", "aum": "1000", "pnl": "10",
+                      "pnlRatio": "0.1", "winRatio": "0.5", "leadDays": "100", "copyTraderNum": "5",
+                      "traderInsts": ["BTC-USDT-SWAP"]} for i in range(2)]
+            return [{"dataVer": "v", "totalPage": "2", "ranks": ranks}]
+        return [{"beginTs": "2000", "pnl": "5", "pnlRatio": "0.05"}, {"beginTs": "1000", "pnl": "0", "pnlRatio": "0"}]
+
+    def close(self):
+        pass
+
+
+def test_okx_sync_pages_and_normalizes(data_dir):
+    from collector import okx
+    fake = FakeOkx()
+    fake.lead_traders = okx.OkxClient.lead_traders.__get__(fake)
+    fake.daily_pnl = okx.OkxClient.daily_pnl.__get__(fake)
+    okx.sync_okx(fake)
+    pnl_calls = [c for c in fake.calls if c[0] == "public-pnl"]
+    assert [c[1] for c in fake.calls if c[0] == "public-lead-traders"] == ["1", "2"]
+    assert sorted(c[1] for c in pnl_calls) == ["C10", "C11", "C20", "C21"]
+
+    page = {"fetched_at": "t", "payload": [{"dataVer": "v", "ranks": [
+        {"uniqueCode": "X", "aum": "5000", "pnlRatio": "1.5", "leadDays": "30", "copyTraderNum": "3", "traderInsts": ["A", "B"]}]}]}
+    [row] = normalize.okx_trader_rows(page)
+    assert row["user"] == "X" and row["aum"] == 5000.0 and row["n_instruments"] == 2
+    rows = normalize.okx_pnl_rows({"request": {"uniqueCode": "X"}, "payload": [{"beginTs": "1000", "pnl": "1", "pnlRatio": "0.01"}]})
+    assert rows == [{"user": "X", "time_ms": 1000, "pnl": 1.0, "pnl_ratio": 0.01}]
