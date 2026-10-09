@@ -66,6 +66,7 @@ create table if not exists book_equity (
     trader_equity real,                 -- the copied trader's total account value at the same time
     trader_pnl real,                    -- the trader's cumulative all-time PnL (includes spot)
     trader_perp_pnl real,               -- the trader's cumulative perp PnL: what the book copies
+    leverage_scale real,                -- 1 = full copy; < 1 = shrunk by the max-leverage cap
     primary key (ts, book_id)
 );
 create table if not exists flags (
@@ -99,7 +100,9 @@ class Store:
         # Migrations, each idempotent. 2026-10-07: trader cumulative PnL next to their equity.
         # 2026-10-08: perp-only PnL - allTime PnL includes spot holdings we never copy, which made
         # books look like they "beat" traders whose losses were really spot tokens falling.
-        for column in ("trader_pnl", "trader_perp_pnl"):
+        # 2026-10-09: leverage-cap scale, so tracking compares the book with what it was *meant* to
+        # replicate (scale x trader), not with the trader's full-leverage return.
+        for column in ("trader_pnl", "trader_perp_pnl", "leverage_scale"):
             try:
                 self.db.execute(f"alter table book_equity add column {column} real")
             except sqlite3.OperationalError:
@@ -190,14 +193,14 @@ class Store:
 
     def snapshot_book(self, now: datetime, book_id: int, equity: float, gross: float,
                       trader_equity: float | None, trader_pnl: float | None = None,
-                      trader_perp_pnl: float | None = None) -> None:
+                      trader_perp_pnl: float | None = None, leverage_scale: float | None = None) -> None:
         """Per-book curve next to the trader's own: the tracking error of copying is their difference.
         trader_perp_pnl (cumulative, perps only) is the comparable side: equity moves with deposits,
         and all-time PnL includes spot holdings the book never mirrors."""
         self.db.execute(
-            "insert or replace into book_equity(ts, book_id, equity, gross, trader_equity, trader_pnl, trader_perp_pnl) "
-            "values (?, ?, ?, ?, ?, ?, ?)",
-            (now.isoformat(), book_id, equity, gross, trader_equity, trader_pnl, trader_perp_pnl))
+            "insert or replace into book_equity(ts, book_id, equity, gross, trader_equity, trader_pnl, "
+            "trader_perp_pnl, leverage_scale) values (?, ?, ?, ?, ?, ?, ?, ?)",
+            (now.isoformat(), book_id, equity, gross, trader_equity, trader_pnl, trader_perp_pnl, leverage_scale))
 
     def commit(self) -> None:
         self.db.commit()

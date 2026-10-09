@@ -67,6 +67,7 @@ class Engine:
         self.candidates: tuple[str, pl.DataFrame] | None = None   # (day, signals)
         self.unreplicable_seen: dict[int, dict[str, float]] = {}  # book id -> last reported impossible targets
         self.last_watch: datetime | None = None
+        self.book_scale: dict[int, float] = {}                    # book id -> leverage-cap scale last applied
         self.pause_logged: set[tuple[str, str]] = set()           # (strategy, UTC day) already logged
 
     # --- market and trader data ---
@@ -221,6 +222,7 @@ class Engine:
                 self._close_book(s, book_id, book, now, markets, reason=f"trader equity {view.equity:.0f} below minimum")
                 continue
             targets, scale = target_notionals(view.notionals, view.equity, book.equity(markets), s.max_leverage)
+            self.book_scale[book_id] = scale
             impossible = unreplicable(targets, markets)
             if impossible != self.unreplicable_seen.get(book_id):
                 self.unreplicable_seen[book_id] = impossible
@@ -363,7 +365,7 @@ class Engine:
                 view = self.traders.get(b.trader)
                 self.store.snapshot_book(now, book_id, b.equity(markets), b.gross(markets),
                                          view.equity if view else None, view.pnl if view else None,
-                                         view.perp_pnl if view else None)
+                                         view.perp_pnl if view else None, self.book_scale.get(book_id))
             books = [b for _, b in open_books]
             equity = row["cash_pool"] + sum(b.equity(markets) for b in books)
             gross = sum(b.gross(markets) for b in books)

@@ -322,3 +322,17 @@ def test_explain_reports_components_and_unknown_traders(monkeypatch, tmp_path):
     text_b = ex_mod.explain("0xb")
     assert "−15 pts" in text_b and "EXCLUIDO por liquidations" in text_b
     assert "no está en el pool" in ex_mod.explain("0xzzz")
+
+
+def test_tracking_compares_book_with_scaled_target(setup):
+    from papertrade import tracking
+    engine, ex, store = setup
+    engine.step(T0)
+    [(book_id, _)] = [(i, b) for i, b in store.open_books("test") if b.trader == "0xa"]
+    # Trader runs 10x and makes +2%/h; the 5x cap copies at scale 0.5, so +1%/h is a perfect copy.
+    for h in range(4):
+        store.snapshot_book(T0 + timedelta(hours=h), book_id, equity=3_000.0 * (1.01 ** h), gross=0.0,
+                            trader_equity=1_000.0, trader_perp_pnl=20.0 * h, leverage_scale=0.5)
+    store.commit()
+    [row] = [r for r in tracking.report(store) if r["trader"] == "0xa"]
+    assert row["gap"] == pytest.approx(0.0, abs=1e-9) and row["min_scale"] == 0.5 and row["active"]
