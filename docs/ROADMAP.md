@@ -96,9 +96,16 @@ Pedido el 2026-10-07: un ranking para **acumular** cripto (y quizá acciones), s
 - **v2 preparada e inactiva** (`STRATEGIES_V2`): Sharpe + exclusión de inactivos, liquidados, martingala y leverage extremo. Backtest 42k: +50 %/año, DD −17 %. Se activa solo tras el veredicto del 2026-12-01.
 - **Herramientas:** `copy-trader explain <trader>`, dashboard, tracking error perp vs perp.
 
+## Estado 2026-10-20
+
+- **Forward del leaderboard (primera evidencia sin look-ahead):** el ROI de una semana predice el de la siguiente en ~19.5k traders: IC 0.28-0.32; t = 1.9 con 5 semanas independientes (marginal, dirección consistente con el backtest). ~600 traders desaparecen por semana y se cuentan.
+- **Costo de copiar (11 días, 16 libros activos):** brecha mediana ≈ 0 %/día contra el objetivo escalado por el tope de leverage; mucha dispersión (un libro −14 %). Preliminar.
+- **Diseño:** las reglas de salida dejaron a `top_sharpe` en 3/10 libros y ~70 % en efectivo. Se añadió `top_sharpe_pure` (regla exacta del backtest, sin reglas de salida) por la Excepción 1 del ADR-003, aprobada por el usuario; se evalúa el **2026-12-15**.
+- **Operación:** la Studio se reinició el 12 y el 17 de octubre; todo se recuperó solo, sin pérdida de datos. 1,082 wallets rastreadas.
+
 ## Congelamiento
 
-Parámetros de decisión congelados hasta el **2026-12-01** con criterio de éxito pre-registrado: [ADR-003](decisions/ADR-003-parameter-freeze.md). Prueba de familia de señales y multiplicidad: [research/2026-10-07-signal-family.md](research/2026-10-07-signal-family.md).
+Parámetros de decisión congelados hasta el **2026-12-01** (`top_sharpe_pure`: 2026-12-15) con criterio de éxito pre-registrado: [ADR-003](decisions/ADR-003-parameter-freeze.md). Prueba de familia de señales y multiplicidad: [research/2026-10-07-signal-family.md](research/2026-10-07-signal-family.md).
 
 ## Puntos de decisión
 
