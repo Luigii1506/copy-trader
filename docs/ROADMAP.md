@@ -59,7 +59,7 @@ Lo construido hasta hoy es infraestructura y medición. Lo que falta es intelige
 7. ~~Dashboard mínimo~~ hecho: `copy-trader dashboard` cada 30 min; llega a la laptop vía backup.
 8. Descubrimiento vía Invo (dirección del builder → `builder_fills`).
 9. Capa de IA (fase 6): clasificación de estilo y explicaciones.
-10. Ejecución real (fase 7), solo tras paper trading confirmado.
+10. ~~Ejecución real (fase 7)~~ construida e inactiva ([ADR-004](decisions/ADR-004-real-execution.md)): espejo de `top_sharpe_pure` con guardia independiente, llave de agente sin retiro, dry run por defecto. Falta: probar órdenes en testnet (requiere credenciales del usuario; el faucet exige un depósito previo en mainnet). Mainnet solo tras el veredicto del 2026-12-15.
 
 **Mejoras**
 - ~~Descargar fills de los traders seguidos y de los candidatos top del censo~~ hecho (cohortes `papertrade` y `candidates`: top 100 por score + top 50 por sharpe en cada corrida de wallets).
