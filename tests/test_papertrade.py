@@ -266,7 +266,16 @@ def test_dashboard_builds_from_store(setup, monkeypatch, tmp_path):
     monkeypatch.setattr(dashboard, "read_json", lambda path, default: fake_state.get(path.name, default))
     monkeypatch.setattr(health, "check", lambda: [("OK", "leaderboard: fine"), ("FAIL", "wallets: stale")])
     store.close = lambda: None                      # build() must not close the fixture's connection
+    from papertrade import evidence
+    monkeypatch.setattr(evidence, "evidence", lambda now, force=False: {
+        "computed_at": T0.isoformat(),
+        "forward": {"first": "2026-10-07", "wallets": 19_500.0, "dropped_median": 600.0,
+                    "all_pairs": {"periods": 28, "mean_ic": 0.31, "ic_tstat": 8.3, "ic_positive": 0.86},
+                    "independent": {"periods": 5, "mean_ic": 0.28, "ic_tstat": 1.9, "ic_positive": 0.6},
+                    "random": {"periods": 28, "mean_ic": 0.0, "ic_tstat": 0.1, "ic_positive": 0.5}},
+        "copying": {"books": 16, "median_gap_per_day": 0.00001, "p25": -0.001, "p75": 0.002, "max_hours": 260}})
     page = dashboard.build(T0 + timedelta(minutes=10))
+    assert "Evidencia en vivo" in page and "t = 1.9" in page and "16 libros activos" in page
     assert ">test<" in page and "<svg" in page and "rebalance" in page
     assert 'class="bad">FAIL' in page and "wallets: stale" in page
     assert "congelados" in page and "censo: 10/40" in page

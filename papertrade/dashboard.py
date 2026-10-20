@@ -154,6 +154,37 @@ def ranking_section() -> str:
     return "".join(out)
 
 
+def evidence_section(now: datetime) -> str:
+    """The two live answers the project waits for (ADR-003): does ranking persist, what does copying cost."""
+    from .evidence import evidence
+    ev = evidence(now)
+    out = [f'<h2>Evidencia en vivo <span class="sub">(actualizada {ev["computed_at"][:16]} UTC)</span></h2>']
+    fw = ev.get("forward")
+    if fw and fw.get("all_pairs"):
+        ind = fw.get("independent") or {}
+        t_ind = ind.get("ic_tstat") or 0
+        cls = "good" if t_ind >= 2 else ("warn" if t_ind >= 1 else "muted")
+        out.append(
+            "<p><b>Forward del leaderboard</b> (¿quien gana una semana gana la siguiente?, sin look-ahead):<br>"
+            f'correlación {fw["all_pairs"]["mean_ic"]:.2f} en {fw["all_pairs"]["periods"]} pares diarios · '
+            f'<span class="{cls}">semanas independientes: {ind.get("periods", 0)}, '
+            f't = {t_ind:.1f}</span> (significativo desde t ≥ 2) · azar {fw["random"]["mean_ic"]:.2f} · '
+            f'~{fw["wallets"]:,.0f} traders/semana, ~{fw["dropped_median"]:,.0f} desaparecen y se cuentan</p>')
+    else:
+        out.append('<p class="muted">Forward del leaderboard: aún sin pares de 7 días.</p>')
+    cp = ev.get("copying")
+    if cp:
+        cls = "good" if cp["median_gap_per_day"] > -0.001 else "bad"
+        out.append(
+            "<p><b>Costo de copiar</b> (libro vs trader escalado por el tope de leverage):<br>"
+            f'<span class="{cls}">brecha mediana {cp["median_gap_per_day"]:+.3%}/día</span> '
+            f'(rango intercuartil {cp["p25"]:+.3%} a {cp["p75"]:+.3%}) en {cp["books"]} libros activos, '
+            f'hasta {cp["max_hours"]} h de historia · el backtest supone ≈ −0.018%/día</p>')
+    else:
+        out.append('<p class="muted">Costo de copiar: aún sin libros activos con historia limpia.</p>')
+    return "".join(out)
+
+
 def benchmark_line(store: Store) -> str:
     """BTC's return over the same live window: the bar the strategies have to clear."""
     try:
@@ -195,6 +226,10 @@ def build(now: datetime) -> str:
         try:
             body.append(strategies_section(store, now))
             body.append(benchmark_line(store))
+            try:
+                body.append(evidence_section(now))
+            except Exception:
+                body.append('<p class="muted">Evidencia: no disponible en esta corrida.</p>')
             body.append(ranking_section())
             body.append(events_section(store))
         finally:
