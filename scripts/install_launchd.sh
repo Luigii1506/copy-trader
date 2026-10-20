@@ -55,7 +55,8 @@ install_job() {
   local job="$1"; shift
   local label="com.luisencinas.copytrader.$job"
   local plist="$AGENTS/$label.plist"
-  cat > "$plist" <<EOF
+  local new="$plist.new"
+  cat > "$new" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -82,6 +83,21 @@ $(schedule "$@")
 </dict>
 </plist>
 EOF
+  # Learned 2026-10-20: re-registering a job kills it mid-run, and several deploys in one day kept
+  # the hours-long wallets run from ever finishing. Scheduled jobs pick up new code on their next
+  # run anyway (the tool is reinstalled above), so a job is only re-registered when its plist
+  # changed. Long-running services ("always") are restarted to load the new code.
+  if [ -f "$plist" ] && cmp -s "$new" "$plist" && launchctl print "gui/$UID_NUM/$label" >/dev/null 2>&1; then
+    rm "$new"
+    if [ "$1" = always ]; then
+      launchctl kickstart -k "gui/$UID_NUM/$label"
+      echo "restarted $label (new code)"
+    else
+      echo "unchanged $label"
+    fi
+    return
+  fi
+  mv "$new" "$plist"
   # bootout is asynchronous: wait until a running job has actually exited before re-registering it.
   launchctl bootout "gui/$UID_NUM/$label" 2>/dev/null || true
   for _ in $(seq 30); do launchctl print "gui/$UID_NUM/$label" >/dev/null 2>&1 || break; sleep 1; done
