@@ -188,7 +188,7 @@ class Engine:
                         hit["trader"], hit["rule"], hit["column"], hit["value"], hit["limit"], hit["n_trades"])
         flagged = self.store.flagged(now - FLAG_TTL)
         for s in self.strategies:
-            if self.store.strategy(s.name)["status"] != "active":
+            if not s.exit_rules or self.store.strategy(s.name)["status"] != "active":
                 continue
             for book_id, book in self.store.open_books(s.name):
                 if book.trader in flagged:
@@ -276,7 +276,7 @@ class Engine:
         return last is None or now - datetime.fromisoformat(last) >= timedelta(days=s.rebalance_days)
 
     def rebalance(self, s: Strategy, now: datetime, markets: dict[str, Market]) -> None:
-        flagged = self.store.flagged(now - FLAG_TTL)
+        flagged = self.store.flagged(now - FLAG_TTL) if s.exit_rules else {}
         chosen = [(t, v) for t, v in self._selection(s, now) if t not in flagged]
         if not chosen:
             log.warning("%s: no eligible traders; rebalance postponed", s.name)

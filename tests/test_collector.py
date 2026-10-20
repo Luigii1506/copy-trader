@@ -165,7 +165,11 @@ def test_normalize_rebuilds_processed_tables_when_schema_version_changes(data_di
     assert normalize.VERSION_FILE.read_text().strip() == str(normalize.SCHEMA_VERSION)
 
 
-def test_health_fails_when_jobs_are_stale(data_dir):
+def test_health_fails_when_jobs_are_stale(data_dir, monkeypatch):
+    import shutil
+    from collections import namedtuple
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(500e9, 100e9, 400e9))  # host disk must not matter
     now = datetime.now(timezone.utc)
     write_json(data_dir / "state" / "last_run_leaderboard.json", {"finished_at": now.isoformat()})
     write_json(data_dir / "state" / "last_run_normalize.json", {"finished_at": now.isoformat()})

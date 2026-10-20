@@ -15,6 +15,7 @@ class Strategy:
     rebalance_days: int = 28
     max_leverage: float = 5.0    # per book: gross notional / book equity
     halt_drawdown: float = 0.30  # stop the strategy after this fall from its peak equity
+    exit_rules: bool = True      # behavior watch closes flagged books and blocks re-selection
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -27,6 +28,8 @@ STRATEGIES = [
     Strategy("low_drawdown", "low_dd"),
     Strategy("random", "random"),
     Strategy("top_score", "trader_score"),   # TraderScore v1 (analysis/score.py)
+    # ADR-003 exception 1 (2026-10-20): the exact backtested rule, without behavior exit rules.
+    Strategy("top_sharpe_pure", "sharpe", exit_rules=False),
 ]
 
 # Prepared, NOT running (ADR-003 freeze until 2026-12-01). Enabling = appending to STRATEGIES

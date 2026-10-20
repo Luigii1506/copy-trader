@@ -336,3 +336,26 @@ def test_tracking_compares_book_with_scaled_target(setup):
     store.commit()
     [row] = [r for r in tracking.report(store) if r["trader"] == "0xa"]
     assert row["gap"] == pytest.approx(0.0, abs=1e-9) and row["min_scale"] == 0.5 and row["active"]
+
+
+def test_strategy_without_exit_rules_keeps_flagged_traders(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine_mod, "KILL_FILE", tmp_path / "KILL")
+    candidates = pl.DataFrame({"user": ["0xa", "0xb"], "ret": [0.5, 0.4]})
+    monkeypatch.setattr(selection, "candidate_signals", lambda now: candidates)
+    flag = [{"trader": "0xa", "rule": "leverage", "column": "p95_leverage", "value": 20.0, "limit": 15.0,
+             "n_trades": 30, "actionable": True}]
+    monkeypatch.setattr(watch, "run", lambda traders, now: flag)
+    store = Store(tmp_path / "pt.db")
+    filtered = Strategy("filtered", "ret", n_traders=2)
+    pure = Strategy("pure", "ret", n_traders=2, exit_rules=False)
+    engine = engine_mod.Engine(FakeExchange(), store, [filtered, pure])
+    engine.step(T0)
+    engine.step(T0 + timedelta(hours=7))
+    assert {b.trader for _, b in store.open_books("filtered")} == {"0xb"}
+    assert {b.trader for _, b in store.open_books("pure")} == {"0xa", "0xb"}
+
+
+def test_pure_sharpe_strategy_is_registered():
+    from papertrade.config import STRATEGIES
+    pure = [s for s in STRATEGIES if s.name == "top_sharpe_pure"]
+    assert pure and pure[0].signal == "sharpe" and pure[0].exit_rules is False
