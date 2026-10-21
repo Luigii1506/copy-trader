@@ -292,14 +292,21 @@ def test_census_skips_vaults_and_small_volume_and_resumes(data_dir, monkeypatch)
 
     monkeypatch.setattr(census, "SAVE_EVERY", 10)
     first = FakePortfolioClient(fail={f"0x{5:040x}"})
-    census.run(first)
+    census.run(first, rounds=1)
     assert census.progress() == (118, 118)
     assert f"0x{0:040x}" not in first.seen and f"0x{1:040x}" not in first.seen
     assert first.seen != sorted(first.seen)                     # random order
 
+    # Rolling: the next round keeps every wallet of the previous one and adds new leaderboard wallets.
+    rows.append(leaderboard_row(f"0x{999:040x}", 1000, 0, 0))
+    rows[-1]["windowPerformances"][3][1]["vlm"] = "50000"
+    RawWriter("leaderboard", utcnow()).write(envelope("leaderboard", {}, {"leaderboardRows": rows[5:]}, utcnow()))
     second = FakePortfolioClient()
-    census.run(second)                                          # already complete: nothing refetched
-    assert second.seen == []
+    census.run(second, rounds=1)
+    assert len(second.seen) == 119                              # 118 previous (incl. 5 no longer listed) + 1 new
+    assert f"0x{999:040x}" in second.seen and f"0x{2:040x}" in second.seen
+    rounds = [json.loads(line) for line in (data_dir / "state" / "census_rounds.jsonl").read_text().splitlines()]
+    assert [r["round"] for r in rounds] == [1] and rounds[0]["wallets"] == 118
 
 
 def test_universe_add_followed_traders_is_append_only(data_dir):
