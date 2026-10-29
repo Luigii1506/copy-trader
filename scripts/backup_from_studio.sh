@@ -6,7 +6,8 @@
 # processed/ is rebuilt from raw/. No --delete, so a file lost on the Studio is never removed here.
 set -uo pipefail
 
-HOST="${COPY_TRADER_HOST:-admin@100.88.239.107}"
+# Tailscale MagicDNS name, not an IP: IPs change when the tailnet does (happened 2026-10-29).
+HOST="${COPY_TRADER_HOST:-admin@admins-mac-studio}"
 KEY="$HOME/.ssh/mac_studio_ed25519"
 DEST="$HOME/data/copy-trader-backup"
 SSH="ssh -i $KEY -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15"
