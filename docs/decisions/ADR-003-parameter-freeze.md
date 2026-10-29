@@ -27,6 +27,8 @@ Quedan **congelados hasta el 2026-12-01** (≥ 8 semanas de forward) los paráme
 
 **Actualización 2026-10-08 (b), también antes de datos del forward:** `copy-trader explain` mostró que el #1 del v1 es una cuenta inactiva (retorno 0 %, drawdown 0, 100 % pasos positivos); 3 de su top 10 lo son y el 34 % del pool es plano. Los componentes drawdown/consistencia/estabilidad premian la inactividad: es la causa mecánica de que el v1 no se replicara. v2 añade **exclusión de cuentas inactivas: volatilidad por paso < 0.2 %**. Implementado en `analysis/score.py` (`STRATEGIES_V2`, inactiva).
 
+**Actualización 2026-10-29 (c), antes de usarla:** el costo de copiar medido en vivo (research/2026-10-29-copying-cost.md) se concentra en traders de operaciones muy cortas (correlación con fills/día −0.66; con duración mediana +0.56), mientras la fórmula `copyability_estimate` no predice (−0.05). Candidato v2: **excluir traders con duración mediana de operación < 15 min**. Nada cambia en vivo.
+
 ## Excepción 1 — 2026-10-20: `top_sharpe_pure` (aprobada por el usuario antes de aplicarla)
 
 **Problema de diseño, no de resultados:** las reglas de salida cerraron 22 libros, casi todos por leverage p95 > 15x. `top_sharpe` quedó con 3 de 10 libros y ~70 % en efectivo hasta el rebalanceo del 2026-11-03, y todas las estrategias operan a ~0.01x. Los traders de mejor Sharpe suelen usar leverage alto, y el backtest (+48 %/año) se ganó *con* ellos (no había fills históricos para filtrar). El forward estaba probando una estrategia distinta de la validada y casi sin exposición, así que no había resultados que perseguir.
